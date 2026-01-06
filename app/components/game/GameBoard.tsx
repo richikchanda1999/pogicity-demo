@@ -7,6 +7,7 @@ import {
   GridCell,
   Direction,
   LightingType,
+  VisualSettings,
   GRID_WIDTH,
   GRID_HEIGHT,
 } from "./types";
@@ -52,7 +53,6 @@ const PhaserGame = dynamic(() => import("./phaser/PhaserGame"), {
 
 import ToolWindow from "../ui/ToolWindow";
 import MusicPlayer from "../ui/MusicPlayer";
-import DebugWindow, { VisualSettings } from "../ui/DebugWindow";
 import LoadWindow from "../ui/LoadWindow";
 import Modal from "../ui/Modal";
 import PromptModal from "../ui/PromptModal";
@@ -104,7 +104,6 @@ export default function GameBoard() {
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(
     null
   );
-  const [isDebugWindowVisible, setIsDebugWindowVisible] = useState(false);
   const [isLoadWindowVisible, setIsLoadWindowVisible] = useState(false);
   const [modalState, setModalState] = useState<{
     isVisible: boolean;
@@ -1549,67 +1548,6 @@ export default function GameBoard() {
         <MusicPlayer />
       </div>
 
-      {/* Bottom left - Debug/Drive buttons (secondary) - HIDDEN FOR NOW */}
-      {/* <div
-        style={{
-          position: "absolute",
-          bottom: 16,
-          left: 16,
-          zIndex: 1000,
-          display: "flex",
-          gap: 8,
-        }}
-        onWheel={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => {
-            setIsPlayerDriving((prev) => !prev);
-            playDoubleClickSound();
-          }}
-          className={`rct-button ${isPlayerDriving ? "active" : ""}`}
-          style={{
-            width: 36,
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 18,
-            padding: 0,
-          }}
-          title={
-            isPlayerDriving
-              ? "Exit driving mode (WASD/Arrow keys)"
-              : "Enter driving mode (WASD/Arrow keys)"
-          }
-        >
-          🚗
-        </button>
-        <button
-          onClick={() => {
-              const willOpen = !isDebugWindowVisible;
-              setIsDebugWindowVisible(willOpen);
-              if (willOpen) {
-                playOpenSound();
-              } else {
-                playDoubleClickSound();
-              }
-            }}
-          className={`rct-button ${isDebugWindowVisible ? "active" : ""}`}
-          style={{
-            width: 36,
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 18,
-            padding: 0,
-          }}
-          title="Visual debug settings"
-        >
-          🎨
-        </button>
-      </div> */}
-
       {/* Main game area */}
       <div
         style={{
@@ -1698,18 +1636,6 @@ export default function GameBoard() {
             }
           }}
         />
-
-        {/* Floating debug window - HIDDEN FOR NOW */}
-        {/* <DebugWindow
-          settings={visualSettings}
-          onSettingsChange={setVisualSettings}
-          showPaths={debugPaths}
-          onShowPathsChange={setDebugPaths}
-          showStats={showStats}
-          onShowStatsChange={setShowStats}
-          isVisible={isDebugWindowVisible}
-          onClose={() => setIsDebugWindowVisible(false)}
-        /> */}
 
         {/* Load window */}
         <LoadWindow

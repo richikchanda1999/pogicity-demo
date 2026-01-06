@@ -47,6 +47,13 @@ export enum LightingType {
   Sunset = "sunset",
 }
 
+export interface VisualSettings {
+  blueness: number; // -100 to 100 (hue shift toward blue)
+  contrast: number; // 0.5 to 2.0
+  saturation: number; // 0.5 to 2.0
+  brightness: number; // 0.5 to 2.0
+}
+
 export enum CharacterType {
   Banana = "banana",
   Apple = "apple",
