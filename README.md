@@ -271,6 +271,35 @@ Clean up your renders and ensure consistency:
 | Format | PNG with transparency |
 | Directions | South (required), North/East/West (optional) |
 
+### Sprite Alignment Guide
+
+**The most important rule:** The bottom (southeast) corner of your building should align with pixel coordinates **(256, 512)** on a 512x512 canvas—that's the bottom-center of the image.
+
+```
+         Canvas (512x512)
+    ┌─────────────────────────┐
+    │                         │
+    │      ┌─────────┐        │
+    │     /           \       │
+    │    /   BUILDING  \      │
+    │   /               \     │
+    │  /                 \    │
+    │ /                   \   │
+    │◄─────────────────────►  │
+    │         256px           │
+    └────────────┬────────────┘
+                 │
+            (256, 512)
+         Front corner here
+```
+
+**Why this matters:**
+- The engine anchors sprites at the bottom-center point
+- This ensures buildings align correctly with the isometric grid
+- Misaligned sprites will appear to "float" or sink into the ground
+
+**For larger canvases:** If your building needs more space (e.g., 1024x1024), the front corner should still be at the horizontal center, bottom edge—so (512, 1024) for a 1024x1024 canvas.
+
 ---
 
 ## Asset Usage
