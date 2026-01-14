@@ -2,6 +2,11 @@
   "name": "pogicity",
   "version": "0.1.0",
   "private": true,
+  "main": "./app/components/game/phaser/index.ts",
+  "exports": {
+    ".": "./app/components/game/phaser/index.ts",
+    "./app/*": "./app/*"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
