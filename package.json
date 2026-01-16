@@ -2,9 +2,13 @@
   "name": "pogicity",
   "version": "0.1.0",
   "private": true,
-  "main": "./app/components/game/phaser/index.ts",
+  "main": "./app/components/game/index.ts",
   "exports": {
-    ".": "./app/components/game/phaser/index.ts",
+    ".": "./app/components/game/index.ts",
+    "./phaser": "./app/components/game/phaser/index.ts",
+    "./types": "./app/components/game/types.ts",
+    "./roadUtils": "./app/components/game/roadUtils.ts",
+    "./buildings": "./app/data/buildings.ts",
     "./app/*": "./app/*"
   },
   "scripts": {

@@ -245,8 +245,10 @@ export class MainScene extends Phaser.Scene {
       });
     }
 
-    // Initialize empty grid
-    this.initializeGrid();
+    // Initialize empty grid only if not already set by React's updateGrid()
+    if (this.grid.length === 0) {
+      this.initializeGrid();
+    }
 
     // Mark scene as ready
     this.isReady = true;

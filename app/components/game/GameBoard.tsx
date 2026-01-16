@@ -87,9 +87,22 @@ const findClosestZoomIndex = (zoomValue: number): number => {
   return closestIndex;
 };
 
-export default function GameBoard() {
+export interface GameBoardProps {
+  /** Optional custom initial grid. If not provided, uses default city layout. */
+  initialGrid?: GridCell[][] | (() => GridCell[][]);
+}
+
+export default function GameBoard({ initialGrid }: GameBoardProps = {}) {
   // Grid state (only thing React manages now)
-  const [grid, setGrid] = useState<GridCell[][]>(createEmptyGrid);
+  const [grid, setGrid] = useState<GridCell[][]>(() => {
+    if (typeof initialGrid === "function") {
+      return initialGrid();
+    }
+    if (initialGrid) {
+      return initialGrid;
+    }
+    return createEmptyGrid();
+  });
 
   // UI state
   const [selectedTool, setSelectedTool] = useState<ToolType>(ToolType.None);
@@ -97,13 +110,9 @@ export default function GameBoard() {
   const [debugPaths, setDebugPaths] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [isToolWindowVisible, setIsToolWindowVisible] = useState(false);
-  const [buildingOrientation, setBuildingOrientation] = useState<Direction>(
-    Direction.Down
-  );
+  const [buildingOrientation, setBuildingOrientation] = useState<Direction>(Direction.Down);
   const [isPlayerDriving, setIsPlayerDriving] = useState(false);
-  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(
-    null
-  );
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null);
   const [isLoadWindowVisible, setIsLoadWindowVisible] = useState(false);
   const [modalState, setModalState] = useState<{
     isVisible: boolean;
@@ -145,8 +154,7 @@ export default function GameBoard() {
   // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
-      const isTouchDevice =
-        "ontouchstart" in window || navigator.maxTouchPoints > 0;
+      const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
       const isSmallScreen = window.innerWidth < 768;
       setIsMobile(isTouchDevice || isSmallScreen);
     };
@@ -168,6 +176,7 @@ export default function GameBoard() {
     if (selectedBuildingId) {
       const building = getBuilding(selectedBuildingId);
       if (building?.supportsRotation) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBuildingOrientation(Direction.Down);
       }
     }
@@ -263,11 +272,7 @@ export default function GameBoard() {
           }
           case ToolType.RoadNetwork: {
             const segmentOrigin = getRoadSegmentOrigin(x, y);
-            const placementCheck = canPlaceRoadSegment(
-              newGrid,
-              segmentOrigin.x,
-              segmentOrigin.y
-            );
+            const placementCheck = canPlaceRoadSegment(newGrid, segmentOrigin.x, segmentOrigin.y);
             if (!placementCheck.valid) break;
 
             for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
@@ -283,10 +288,7 @@ export default function GameBoard() {
               }
             }
 
-            const affectedSegments = getAffectedSegments(
-              segmentOrigin.x,
-              segmentOrigin.y
-            );
+            const affectedSegments = getAffectedSegments(segmentOrigin.x, segmentOrigin.y);
 
             for (const seg of affectedSegments) {
               if (!hasRoadSegment(newGrid, seg.x, seg.y)) continue;
@@ -311,18 +313,12 @@ export default function GameBoard() {
               const cell = newGrid[y][x];
               if (cell.type === TileType.Building && cell.buildingId) {
                 const building = getBuilding(cell.buildingId);
-                if (
-                  building &&
-                  (building.category === "props" || building.isDecoration)
-                ) {
+                if (building && (building.category === "props" || building.isDecoration)) {
                   newGrid[y][x].underlyingTileType = TileType.Tile;
                 } else {
                   break;
                 }
-              } else if (
-                cell.type === TileType.Grass ||
-                cell.type === TileType.Snow
-              ) {
+              } else if (cell.type === TileType.Grass || cell.type === TileType.Snow) {
                 newGrid[y][x].type = TileType.Tile;
                 newGrid[y][x].isOrigin = true;
                 newGrid[y][x].originX = x;
@@ -339,19 +335,12 @@ export default function GameBoard() {
               const cell = newGrid[y][x];
               if (cell.type === TileType.Building && cell.buildingId) {
                 const building = getBuilding(cell.buildingId);
-                if (
-                  building &&
-                  (building.category === "props" || building.isDecoration)
-                ) {
+                if (building && (building.category === "props" || building.isDecoration)) {
                   newGrid[y][x].underlyingTileType = TileType.Asphalt;
                 } else {
                   break;
                 }
-              } else if (
-                cell.type === TileType.Grass ||
-                cell.type === TileType.Snow ||
-                cell.type === TileType.Tile
-              ) {
+              } else if (cell.type === TileType.Grass || cell.type === TileType.Snow || cell.type === TileType.Tile) {
                 newGrid[y][x].type = TileType.Asphalt;
                 newGrid[y][x].isOrigin = true;
                 newGrid[y][x].originX = x;
@@ -368,18 +357,12 @@ export default function GameBoard() {
               const cell = newGrid[y][x];
               if (cell.type === TileType.Building && cell.buildingId) {
                 const building = getBuilding(cell.buildingId);
-                if (
-                  building &&
-                  (building.category === "props" || building.isDecoration)
-                ) {
+                if (building && (building.category === "props" || building.isDecoration)) {
                   newGrid[y][x].underlyingTileType = TileType.Snow;
                 } else {
                   break;
                 }
-              } else if (
-                cell.type === TileType.Grass ||
-                cell.type === TileType.Tile
-              ) {
+              } else if (cell.type === TileType.Grass || cell.type === TileType.Tile) {
                 newGrid[y][x].type = TileType.Snow;
                 newGrid[y][x].isOrigin = true;
                 newGrid[y][x].originX = x;
@@ -398,10 +381,7 @@ export default function GameBoard() {
             if (!building) break;
 
             // Get footprint based on current orientation
-            const footprint = getBuildingFootprint(
-              building,
-              buildingOrientation
-            );
+            const footprint = getBuildingFootprint(building, buildingOrientation);
             const bOriginX = x - footprint.width + 1;
             const bOriginY = y - footprint.height + 1;
 
@@ -414,30 +394,17 @@ export default function GameBoard() {
               break;
             }
 
-            const isDecoration =
-              building.category === "props" || building.isDecoration;
+            const isDecoration = building.category === "props" || building.isDecoration;
             let buildingHasCollision = false;
-            for (
-              let dy = 0;
-              dy < footprint.height && !buildingHasCollision;
-              dy++
-            ) {
-              for (
-                let dx = 0;
-                dx < footprint.width && !buildingHasCollision;
-                dx++
-              ) {
+            for (let dy = 0; dy < footprint.height && !buildingHasCollision; dy++) {
+              for (let dx = 0; dx < footprint.width && !buildingHasCollision; dx++) {
                 const px = bOriginX + dx;
                 const py = bOriginY + dy;
                 if (px < GRID_WIDTH && py < GRID_HEIGHT) {
                   const cellType = newGrid[py][px].type;
                   if (isDecoration) {
                     // Decorations can be placed on grass, tile, or snow
-                    if (
-                      cellType !== TileType.Grass &&
-                      cellType !== TileType.Tile &&
-                      cellType !== TileType.Snow
-                    ) {
+                    if (cellType !== TileType.Grass && cellType !== TileType.Tile && cellType !== TileType.Snow) {
                       buildingHasCollision = true;
                     }
                   } else {
@@ -455,9 +422,7 @@ export default function GameBoard() {
                 const px = bOriginX + dx;
                 const py = bOriginY + dy;
                 if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-                  const underlyingType = isDecoration
-                    ? newGrid[py][px].type
-                    : undefined;
+                  const underlyingType = isDecoration ? newGrid[py][px].type : undefined;
                   newGrid[py][px].type = TileType.Building;
                   newGrid[py][px].buildingId = selectedBuildingId;
                   newGrid[py][px].isOrigin = dx === 0 && dy === 0;
@@ -540,10 +505,7 @@ export default function GameBoard() {
                   const building = getBuilding(cellBuildingId);
                   if (building) {
                     // Get footprint based on stored orientation
-                    const footprint = getBuildingFootprint(
-                      building,
-                      cell.buildingOrientation
-                    );
+                    const footprint = getBuildingFootprint(building, cell.buildingOrientation);
                     sizeW = footprint.width;
                     sizeH = footprint.height;
                   }
@@ -603,17 +565,11 @@ export default function GameBoard() {
           if (selectedTool === ToolType.Snow) {
             if (cell.type === TileType.Building && cell.buildingId) {
               const building = getBuilding(cell.buildingId);
-              if (
-                building &&
-                (building.category === "props" || building.isDecoration)
-              ) {
+              if (building && (building.category === "props" || building.isDecoration)) {
                 newGrid[y][x].underlyingTileType = TileType.Snow;
                 anyPlaced = true;
               }
-            } else if (
-              cell.type === TileType.Grass ||
-              cell.type === TileType.Tile
-            ) {
+            } else if (cell.type === TileType.Grass || cell.type === TileType.Tile) {
               newGrid[y][x].type = TileType.Snow;
               newGrid[y][x].isOrigin = true;
               newGrid[y][x].originX = x;
@@ -623,17 +579,11 @@ export default function GameBoard() {
           } else if (selectedTool === ToolType.Tile) {
             if (cell.type === TileType.Building && cell.buildingId) {
               const building = getBuilding(cell.buildingId);
-              if (
-                building &&
-                (building.category === "props" || building.isDecoration)
-              ) {
+              if (building && (building.category === "props" || building.isDecoration)) {
                 newGrid[y][x].underlyingTileType = TileType.Tile;
                 anyPlaced = true;
               }
-            } else if (
-              cell.type === TileType.Grass ||
-              cell.type === TileType.Snow
-            ) {
+            } else if (cell.type === TileType.Grass || cell.type === TileType.Snow) {
               newGrid[y][x].type = TileType.Tile;
               newGrid[y][x].isOrigin = true;
               newGrid[y][x].originX = x;
@@ -643,18 +593,11 @@ export default function GameBoard() {
           } else if (selectedTool === ToolType.Asphalt) {
             if (cell.type === TileType.Building && cell.buildingId) {
               const building = getBuilding(cell.buildingId);
-              if (
-                building &&
-                (building.category === "props" || building.isDecoration)
-              ) {
+              if (building && (building.category === "props" || building.isDecoration)) {
                 newGrid[y][x].underlyingTileType = TileType.Asphalt;
                 anyPlaced = true;
               }
-            } else if (
-              cell.type === TileType.Grass ||
-              cell.type === TileType.Snow ||
-              cell.type === TileType.Tile
-            ) {
+            } else if (cell.type === TileType.Grass || cell.type === TileType.Snow || cell.type === TileType.Tile) {
               newGrid[y][x].type = TileType.Asphalt;
               newGrid[y][x].isOrigin = true;
               newGrid[y][x].originX = x;
@@ -675,186 +618,173 @@ export default function GameBoard() {
   );
 
   // Handle batch road segment placement from drag operations
-  const handleRoadDrag = useCallback(
-    (segments: Array<{ x: number; y: number }>) => {
-      if (segments.length === 0) return;
+  const handleRoadDrag = useCallback((segments: Array<{ x: number; y: number }>) => {
+    if (segments.length === 0) return;
 
-      setGrid((prevGrid) => {
-        const newGrid = prevGrid.map((row) => row.map((cell) => ({ ...cell })));
-        let anyPlaced = false;
+    setGrid((prevGrid) => {
+      const newGrid = prevGrid.map((row) => row.map((cell) => ({ ...cell })));
+      let anyPlaced = false;
 
-        // Place all road segments
+      // Place all road segments
+      for (const { x: segmentX, y: segmentY } of segments) {
+        const placementCheck = canPlaceRoadSegment(newGrid, segmentX, segmentY);
+        if (!placementCheck.valid) continue;
+
+        for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
+          for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
+            const px = segmentX + dx;
+            const py = segmentY + dy;
+            if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+              newGrid[py][px].isOrigin = dx === 0 && dy === 0;
+              newGrid[py][px].originX = segmentX;
+              newGrid[py][px].originY = segmentY;
+              newGrid[py][px].type = TileType.Road;
+              anyPlaced = true;
+            }
+          }
+        }
+      }
+
+      if (anyPlaced) {
+        // Update all affected segments (including neighbors)
+        const allAffectedSegments = new Set<string>();
         for (const { x: segmentX, y: segmentY } of segments) {
-          const placementCheck = canPlaceRoadSegment(
-            newGrid,
-            segmentX,
-            segmentY
-          );
-          if (!placementCheck.valid) continue;
+          const affectedSegments = getAffectedSegments(segmentX, segmentY);
+          for (const seg of affectedSegments) {
+            allAffectedSegments.add(`${seg.x},${seg.y}`);
+          }
+        }
 
-          for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
-            for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
-              const px = segmentX + dx;
-              const py = segmentY + dy;
-              if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-                newGrid[py][px].isOrigin = dx === 0 && dy === 0;
-                newGrid[py][px].originX = segmentX;
-                newGrid[py][px].originY = segmentY;
-                newGrid[py][px].type = TileType.Road;
-                anyPlaced = true;
-              }
+        for (const segKey of allAffectedSegments) {
+          const [segX, segY] = segKey.split(",").map(Number);
+          if (!hasRoadSegment(newGrid, segX, segY)) continue;
+
+          const connections = getRoadConnections(newGrid, segX, segY);
+          const segmentType = getSegmentType(connections);
+          const pattern = generateRoadPattern(segmentType);
+
+          for (const tile of pattern) {
+            const px = segX + tile.dx;
+            const py = segY + tile.dy;
+            if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+              newGrid[py][px].type = tile.type;
             }
           }
         }
 
-        if (anyPlaced) {
-          // Update all affected segments (including neighbors)
-          const allAffectedSegments = new Set<string>();
-          for (const { x: segmentX, y: segmentY } of segments) {
-            const affectedSegments = getAffectedSegments(segmentX, segmentY);
-            for (const seg of affectedSegments) {
-              allAffectedSegments.add(`${seg.x},${seg.y}`);
-            }
-          }
+        playBuildRoadSound();
+      }
 
-          for (const segKey of allAffectedSegments) {
-            const [segX, segY] = segKey.split(",").map(Number);
-            if (!hasRoadSegment(newGrid, segX, segY)) continue;
-
-            const connections = getRoadConnections(newGrid, segX, segY);
-            const segmentType = getSegmentType(connections);
-            const pattern = generateRoadPattern(segmentType);
-
-            for (const tile of pattern) {
-              const px = segX + tile.dx;
-              const py = segY + tile.dy;
-              if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-                newGrid[py][px].type = tile.type;
-              }
-            }
-          }
-
-          playBuildRoadSound();
-        }
-
-        return newGrid;
-      });
-    },
-    []
-  );
+      return newGrid;
+    });
+  }, []);
 
   // Perform the actual deletion of tiles
-  const performDeletion = useCallback(
-    (tiles: Array<{ x: number; y: number }>) => {
-      setGrid((prevGrid) => {
-        const newGrid = prevGrid.map((row) => row.map((cell) => ({ ...cell })));
-        const deletedOrigins = new Set<string>();
+  const performDeletion = useCallback((tiles: Array<{ x: number; y: number }>) => {
+    setGrid((prevGrid) => {
+      const newGrid = prevGrid.map((row) => row.map((cell) => ({ ...cell })));
+      const deletedOrigins = new Set<string>();
 
-        for (const { x, y } of tiles) {
-          if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) continue;
+      for (const { x, y } of tiles) {
+        if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) continue;
 
-          const cell = newGrid[y][x];
-          if (cell.type === TileType.Grass) continue;
+        const cell = newGrid[y][x];
+        if (cell.type === TileType.Grass) continue;
 
-          const originX = cell.originX ?? x;
-          const originY = cell.originY ?? y;
-          const originKey = `${originX},${originY}`;
+        const originX = cell.originX ?? x;
+        const originY = cell.originY ?? y;
+        const originKey = `${originX},${originY}`;
 
-          if (deletedOrigins.has(originKey)) continue;
-          deletedOrigins.add(originKey);
+        if (deletedOrigins.has(originKey)) continue;
+        deletedOrigins.add(originKey);
 
-          const cellType = cell.type;
+        const cellType = cell.type;
 
-          if (cellType === TileType.Road || cellType === TileType.Asphalt) {
-            const isRoadSegment = hasRoadSegment(newGrid, originX, originY);
+        if (cellType === TileType.Road || cellType === TileType.Asphalt) {
+          const isRoadSegment = hasRoadSegment(newGrid, originX, originY);
 
-            if (isRoadSegment) {
-              // Delete road segment
-              const neighbors = getAffectedSegments(originX, originY).filter(
-                (seg) => seg.x !== originX || seg.y !== originY
-              );
+          if (isRoadSegment) {
+            // Delete road segment
+            const neighbors = getAffectedSegments(originX, originY).filter(
+              (seg) => seg.x !== originX || seg.y !== originY
+            );
 
-              for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
-                for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
-                  const px = originX + dx;
-                  const py = originY + dy;
-                  if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-                    newGrid[py][px].type = TileType.Grass;
-                    newGrid[py][px].isOrigin = true;
-                    newGrid[py][px].originX = undefined;
-                    newGrid[py][px].originY = undefined;
-                  }
-                }
-              }
-
-              // Update neighboring road segments
-              for (const seg of neighbors) {
-                if (!hasRoadSegment(newGrid, seg.x, seg.y)) continue;
-
-                const connections = getRoadConnections(newGrid, seg.x, seg.y);
-                const segmentType = getSegmentType(connections);
-                const pattern = generateRoadPattern(segmentType);
-
-                for (const tile of pattern) {
-                  const px = seg.x + tile.dx;
-                  const py = seg.y + tile.dy;
-                  if (px < GRID_WIDTH && py < GRID_HEIGHT) {
-                    newGrid[py][px].type = tile.type;
-                  }
-                }
-              }
-            } else {
-              // Single tile
-              newGrid[y][x].type = TileType.Grass;
-              newGrid[y][x].isOrigin = true;
-              newGrid[y][x].originX = undefined;
-              newGrid[y][x].originY = undefined;
-            }
-          } else if (cellType === TileType.Building && cell.buildingId) {
-            // Delete building
-            const building = getBuilding(cell.buildingId);
-            let sizeW = 1;
-            let sizeH = 1;
-
-            if (building) {
-              const footprint = getBuildingFootprint(
-                building,
-                cell.buildingOrientation
-              );
-              sizeW = footprint.width;
-              sizeH = footprint.height;
-            }
-
-            for (let dy = 0; dy < sizeH; dy++) {
-              for (let dx = 0; dx < sizeW; dx++) {
+            for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
+              for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
                 const px = originX + dx;
                 const py = originY + dy;
                 if (px < GRID_WIDTH && py < GRID_HEIGHT) {
                   newGrid[py][px].type = TileType.Grass;
-                  newGrid[py][px].buildingId = undefined;
                   newGrid[py][px].isOrigin = true;
                   newGrid[py][px].originX = undefined;
                   newGrid[py][px].originY = undefined;
                 }
               }
             }
+
+            // Update neighboring road segments
+            for (const seg of neighbors) {
+              if (!hasRoadSegment(newGrid, seg.x, seg.y)) continue;
+
+              const connections = getRoadConnections(newGrid, seg.x, seg.y);
+              const segmentType = getSegmentType(connections);
+              const pattern = generateRoadPattern(segmentType);
+
+              for (const tile of pattern) {
+                const px = seg.x + tile.dx;
+                const py = seg.y + tile.dy;
+                if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+                  newGrid[py][px].type = tile.type;
+                }
+              }
+            }
           } else {
-            // Snow, Tile, or other single tiles
+            // Single tile
             newGrid[y][x].type = TileType.Grass;
             newGrid[y][x].isOrigin = true;
             newGrid[y][x].originX = undefined;
             newGrid[y][x].originY = undefined;
           }
-        }
+        } else if (cellType === TileType.Building && cell.buildingId) {
+          // Delete building
+          const building = getBuilding(cell.buildingId);
+          let sizeW = 1;
+          let sizeH = 1;
 
-        playDestructionSound();
-        // Horizontal shake on deletion (eraser drag / bulk delete path)
-        phaserGameRef.current?.shakeScreen("x", 0.6, 150);
-        return newGrid;
-      });
-    },
-    []
-  );
+          if (building) {
+            const footprint = getBuildingFootprint(building, cell.buildingOrientation);
+            sizeW = footprint.width;
+            sizeH = footprint.height;
+          }
+
+          for (let dy = 0; dy < sizeH; dy++) {
+            for (let dx = 0; dx < sizeW; dx++) {
+              const px = originX + dx;
+              const py = originY + dy;
+              if (px < GRID_WIDTH && py < GRID_HEIGHT) {
+                newGrid[py][px].type = TileType.Grass;
+                newGrid[py][px].buildingId = undefined;
+                newGrid[py][px].isOrigin = true;
+                newGrid[py][px].originX = undefined;
+                newGrid[py][px].originY = undefined;
+              }
+            }
+          }
+        } else {
+          // Snow, Tile, or other single tiles
+          newGrid[y][x].type = TileType.Grass;
+          newGrid[y][x].isOrigin = true;
+          newGrid[y][x].originX = undefined;
+          newGrid[y][x].originY = undefined;
+        }
+      }
+
+      playDestructionSound();
+      // Horizontal shake on deletion (eraser drag / bulk delete path)
+      phaserGameRef.current?.shakeScreen("x", 0.6, 150);
+      return newGrid;
+    });
+  }, []);
 
   // Handle eraser drag with confirmation modal
   const handleEraserDrag = useCallback(
@@ -880,13 +810,8 @@ export default function GameBoard() {
 
         if (cell.type === TileType.Building && cell.buildingId) {
           const building = getBuilding(cell.buildingId);
-          itemsToDelete.add(
-            `building:${originKey}:${building?.name || "Building"}`
-          );
-        } else if (
-          cell.type === TileType.Road ||
-          cell.type === TileType.Asphalt
-        ) {
+          itemsToDelete.add(`building:${originKey}:${building?.name || "Building"}`);
+        } else if (cell.type === TileType.Road || cell.type === TileType.Asphalt) {
           const isRoadSegment = hasRoadSegment(grid, originX, originY);
           if (isRoadSegment) {
             itemsToDelete.add(`road:${originKey}`);
@@ -988,10 +913,7 @@ export default function GameBoard() {
           };
 
           try {
-            localStorage.setItem(
-              `pogicity_save_${saveName}`,
-              JSON.stringify(saveData)
-            );
+            localStorage.setItem(`pogicity_save_${saveName}`, JSON.stringify(saveData));
             setModalState({
               isVisible: true,
               title: "Game Saved",
@@ -1017,8 +939,7 @@ export default function GameBoard() {
         message: `Enter a name for this save:\n(Leave empty for "${defaultName}")`,
         defaultValue: defaultName,
         onConfirm: (saveName: string) => {
-          const finalName =
-            saveName.trim() === "" ? defaultName : saveName.trim();
+          const finalName = saveName.trim() === "" ? defaultName : saveName.trim();
           const saveData: GameSaveData = {
             grid,
             characterCount,
@@ -1029,10 +950,7 @@ export default function GameBoard() {
           };
 
           try {
-            localStorage.setItem(
-              `pogicity_save_${finalName}`,
-              JSON.stringify(saveData)
-            );
+            localStorage.setItem(`pogicity_save_${finalName}`, JSON.stringify(saveData));
             setModalState({
               isVisible: true,
               title: "Game Saved",
@@ -1177,21 +1095,17 @@ export default function GameBoard() {
             width: 48,
             height: 48,
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#707070 #D0D0D0 #D0D0D0 #707070";
+            e.currentTarget.style.borderColor = "#707070 #D0D0D0 #D0D0D0 #707070";
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #505050";
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#D0D0D0 #707070 #707070 #D0D0D0";
+            e.currentTarget.style.borderColor = "#D0D0D0 #707070 #707070 #D0D0D0";
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #505050";
           }}
@@ -1231,21 +1145,17 @@ export default function GameBoard() {
             width: 48,
             height: 48,
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#707070 #D0D0D0 #D0D0D0 #707070";
+            e.currentTarget.style.borderColor = "#707070 #D0D0D0 #D0D0D0 #707070";
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #505050";
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#D0D0D0 #707070 #707070 #D0D0D0";
+            e.currentTarget.style.borderColor = "#D0D0D0 #707070 #707070 #D0D0D0";
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #505050";
           }}
@@ -1284,21 +1194,17 @@ export default function GameBoard() {
             width: 48,
             height: 48,
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#366BA8 #A3CDF9 #A3CDF9 #366BA8"; // Inverted
+            e.currentTarget.style.borderColor = "#366BA8 #A3CDF9 #A3CDF9 #366BA8"; // Inverted
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #244B7A";
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#A3CDF9 #366BA8 #366BA8 #A3CDF9"; // Reset
+            e.currentTarget.style.borderColor = "#A3CDF9 #366BA8 #366BA8 #A3CDF9"; // Reset
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #244B7A";
           }}
@@ -1337,21 +1243,17 @@ export default function GameBoard() {
             width: 48,
             height: 48,
           }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
+          onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.1)")}
           onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#366BA8 #A3CDF9 #A3CDF9 #366BA8"; // Inverted
+            e.currentTarget.style.borderColor = "#366BA8 #A3CDF9 #A3CDF9 #366BA8"; // Inverted
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #244B7A";
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#A3CDF9 #366BA8 #366BA8 #A3CDF9"; // Reset
+            e.currentTarget.style.borderColor = "#A3CDF9 #366BA8 #366BA8 #A3CDF9"; // Reset
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #244B7A";
           }}
@@ -1399,9 +1301,7 @@ export default function GameBoard() {
               playDoubleClickSound();
             }
           }}
-          className={`rct-maroon-button-interactive ${
-            isToolWindowVisible ? "active" : ""
-          }`}
+          className={`rct-maroon-button-interactive ${isToolWindowVisible ? "active" : ""}`}
           title="Build Menu"
           style={{
             background: isToolWindowVisible ? "#4a1a1a" : "#6b2a2a",
@@ -1416,33 +1316,24 @@ export default function GameBoard() {
             justifyContent: "center",
             borderRadius: 0,
             borderTop: "none",
-            boxShadow: isToolWindowVisible
-              ? "inset 1px 1px 0px #2a0a0a"
-              : "1px 1px 0px #2a0a0a",
+            boxShadow: isToolWindowVisible ? "inset 1px 1px 0px #2a0a0a" : "1px 1px 0px #2a0a0a",
             imageRendering: "pixelated",
             transition: "filter 0.1s",
             transform: isToolWindowVisible ? "translate(1px, 1px)" : "none",
           }}
-          onMouseEnter={(e) =>
-            !isToolWindowVisible &&
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
-          onMouseLeave={(e) =>
-            !isToolWindowVisible && (e.currentTarget.style.filter = "none")
-          }
+          onMouseEnter={(e) => !isToolWindowVisible && (e.currentTarget.style.filter = "brightness(1.1)")}
+          onMouseLeave={(e) => !isToolWindowVisible && (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             if (isToolWindowVisible) return;
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#4a1a1a #ab6a6a #ab6a6a #4a1a1a";
+            e.currentTarget.style.borderColor = "#4a1a1a #ab6a6a #ab6a6a #4a1a1a";
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #2a0a0a";
           }}
           onMouseUp={(e) => {
             if (isToolWindowVisible) return;
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#ab6a6a #4a1a1a #4a1a1a #ab6a6a";
+            e.currentTarget.style.borderColor = "#ab6a6a #4a1a1a #4a1a1a #ab6a6a";
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #2a0a0a";
           }}
@@ -1470,18 +1361,13 @@ export default function GameBoard() {
             }
             playDoubleClickSound();
           }}
-          className={`rct-maroon-button-interactive ${
-            selectedTool === ToolType.Eraser ? "active" : ""
-          }`}
+          className={`rct-maroon-button-interactive ${selectedTool === ToolType.Eraser ? "active" : ""}`}
           title="Eraser (Esc to deselect)"
           style={{
-            background:
-              selectedTool === ToolType.Eraser ? "#4a1a1a" : "#6b2a2a",
+            background: selectedTool === ToolType.Eraser ? "#4a1a1a" : "#6b2a2a",
             border: "2px solid",
             borderColor:
-              selectedTool === ToolType.Eraser
-                ? "#4a1a1a #ab6a6a #ab6a6a #4a1a1a"
-                : "#ab6a6a #4a1a1a #4a1a1a #ab6a6a",
+              selectedTool === ToolType.Eraser ? "#4a1a1a #ab6a6a #ab6a6a #4a1a1a" : "#ab6a6a #4a1a1a #4a1a1a #ab6a6a",
             padding: 0,
             cursor: "pointer",
             display: "flex",
@@ -1489,36 +1375,24 @@ export default function GameBoard() {
             justifyContent: "center",
             borderRadius: 0,
             borderTop: "none",
-            boxShadow:
-              selectedTool === ToolType.Eraser
-                ? "inset 1px 1px 0px #2a0a0a"
-                : "1px 1px 0px #2a0a0a",
+            boxShadow: selectedTool === ToolType.Eraser ? "inset 1px 1px 0px #2a0a0a" : "1px 1px 0px #2a0a0a",
             imageRendering: "pixelated",
             transition: "filter 0.1s",
-            transform:
-              selectedTool === ToolType.Eraser ? "translate(1px, 1px)" : "none",
+            transform: selectedTool === ToolType.Eraser ? "translate(1px, 1px)" : "none",
           }}
-          onMouseEnter={(e) =>
-            selectedTool !== ToolType.Eraser &&
-            (e.currentTarget.style.filter = "brightness(1.1)")
-          }
-          onMouseLeave={(e) =>
-            selectedTool !== ToolType.Eraser &&
-            (e.currentTarget.style.filter = "none")
-          }
+          onMouseEnter={(e) => selectedTool !== ToolType.Eraser && (e.currentTarget.style.filter = "brightness(1.1)")}
+          onMouseLeave={(e) => selectedTool !== ToolType.Eraser && (e.currentTarget.style.filter = "none")}
           onMouseDown={(e) => {
             if (selectedTool === ToolType.Eraser) return;
             e.currentTarget.style.filter = "brightness(0.9)";
-            e.currentTarget.style.borderColor =
-              "#4a1a1a #ab6a6a #ab6a6a #4a1a1a";
+            e.currentTarget.style.borderColor = "#4a1a1a #ab6a6a #ab6a6a #4a1a1a";
             e.currentTarget.style.transform = "translate(1px, 1px)";
             e.currentTarget.style.boxShadow = "inset 1px 1px 0px #2a0a0a";
           }}
           onMouseUp={(e) => {
             if (selectedTool === ToolType.Eraser) return;
             e.currentTarget.style.filter = "brightness(1.1)";
-            e.currentTarget.style.borderColor =
-              "#ab6a6a #4a1a1a #4a1a1a #ab6a6a";
+            e.currentTarget.style.borderColor = "#ab6a6a #4a1a1a #4a1a1a #ab6a6a";
             e.currentTarget.style.transform = "none";
             e.currentTarget.style.boxShadow = "1px 1px 0px #2a0a0a";
           }}
@@ -1651,9 +1525,7 @@ export default function GameBoard() {
           message={modalState.message}
           showCancel={modalState.showCancel}
           onConfirm={modalState.onConfirm ?? undefined}
-          onClose={() =>
-            setModalState({ ...modalState, isVisible: false, onConfirm: null })
-          }
+          onClose={() => setModalState({ ...modalState, isVisible: false, onConfirm: null })}
         />
 
         {/* Prompt Modal */}
@@ -1693,9 +1565,7 @@ export default function GameBoard() {
               boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
             }}
           >
-            <span>
-              📱 Best experienced on desktop — mobile may be a bit janky!
-            </span>
+            <span>📱 Best experienced on desktop — mobile may be a bit janky!</span>
             <button
               onClick={() => setMobileWarningDismissed(true)}
               style={{
