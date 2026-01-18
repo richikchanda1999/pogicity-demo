@@ -32,17 +32,12 @@ import {
 } from "../roadUtils";
 import { BUILDINGS, getBuilding, getBuildingFootprint, BuildingDefinition } from "@/app/data/buildings";
 import { loadGifAsAnimation, playGifAnimation } from "./GifLoader";
+import { PriorityQueue } from "@datastructures-js/priority-queue";
 
 // Event types for React communication
 export interface SceneEvents {
   onTileClick: (x: number, y: number) => void;
-  onBuildingClick?: (
-    buildingId: string,
-    originX: number,
-    originY: number,
-    screenX: number,
-    screenY: number
-  ) => void;
+  onBuildingClick?: (buildingId: string, originX: number, originY: number, screenX: number, screenY: number) => void;
   onCarClick?: (carId: string) => void;
   onTileHover: (x: number | null, y: number | null) => void;
   onTilesDrag?: (tiles: Array<{ x: number; y: number }>) => void;
@@ -278,7 +273,7 @@ export class MainScene extends Phaser.Scene {
         x,
         y,
         isOrigin: true,
-      }))
+      })),
     );
   }
 
@@ -357,7 +352,7 @@ export class MainScene extends Phaser.Scene {
     if (fps < 30) fpsColor = "#ff0000"; // Red = bad
 
     this.statsText.setText(
-      [`FPS: ${fps}`, `Characters: ${charCount}`, `Cars: ${carCount}`, `Phaser-managed ✓`].join("\n")
+      [`FPS: ${fps}`, `Characters: ${charCount}`, `Cars: ${carCount}`, `Phaser-managed ✓`].join("\n"),
     );
     this.statsText.setColor(fpsColor);
   }
@@ -397,7 +392,7 @@ export class MainScene extends Phaser.Scene {
       this.baseScrollY = groundY - viewportHeight / 2;
       camera.setScroll(
         Math.round(this.baseScrollX + (this.shakeAxis === "x" ? this.shakeOffset : 0)),
-        Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0))
+        Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0)),
       );
       return;
     }
@@ -436,7 +431,7 @@ export class MainScene extends Phaser.Scene {
 
     camera.setScroll(
       Math.round(this.baseScrollX + (this.shakeAxis === "x" ? this.shakeOffset : 0)),
-      Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0))
+      Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0)),
     );
   }
 
@@ -621,7 +616,7 @@ export class MainScene extends Phaser.Scene {
     tileX: number,
     tileY: number,
     currentDir: Direction,
-    atDeadEnd: boolean = false
+    atDeadEnd: boolean = false,
   ): Direction | null {
     const validDirs = this.getValidCarDirections(tileX, tileY);
     if (validDirs.length === 0) return null;
@@ -719,30 +714,29 @@ export class MainScene extends Phaser.Scene {
       return car;
     }
 
-    const { x, y, direction, speed, waiting, destinationBuilding } = car;
-    const vec = directionVectors[direction];
+    const { x, y, direction, speed, waiting, destinationBuilding, path, pathIndex } = car;
     const tileX = Math.floor(x);
     const tileY = Math.floor(y);
 
     // Check if car has reached its destination building
-    if (destinationBuilding) {
-      const parkingSpot = this.findParkingSpotNearBuilding(destinationBuilding.x, destinationBuilding.y);
-      if (parkingSpot) {
-        const distToParking = Math.sqrt((x - (parkingSpot.x + 0.5)) ** 2 + (y - (parkingSpot.y + 0.5)) ** 2);
-        if (distToParking < 0.8) {
-          // Park the car
-          return {
-            ...car,
-            x: parkingSpot.x + 0.5,
-            y: parkingSpot.y + 0.5,
-            isParked: true,
-            parkedAtBuilding: destinationBuilding,
-            destinationBuilding: undefined,
-            waiting: 0,
-          };
-        }
-      }
-    }
+    // if (destinationBuilding) {
+    //   const parkingSpot = this.findParkingSpotNearBuilding(destinationBuilding.x, destinationBuilding.y);
+    //   if (parkingSpot) {
+    //     const distToParking = Math.sqrt((x - (parkingSpot.x + 0.5)) ** 2 + (y - (parkingSpot.y + 0.5)) ** 2);
+    //     if (distToParking < 0.8) {
+    //       // Park the car
+    //       return {
+    //         ...car,
+    //         x: parkingSpot.x + 0.5,
+    //         y: parkingSpot.y + 0.5,
+    //         isParked: true,
+    //         parkedAtBuilding: destinationBuilding,
+    //         destinationBuilding: undefined,
+    //         waiting: 0,
+    //       };
+    //     }
+    //   }
+    // }
 
     if (!this.isDrivable(tileX, tileY)) {
       const asphaltTiles: { x: number; y: number }[] = [];
@@ -796,45 +790,61 @@ export class MainScene extends Phaser.Scene {
       return { ...car, waiting: 0 };
     }
 
-    const inTileX = x - tileX;
-    const inTileY = y - tileY;
-    const threshold = speed * 2;
-    const nearCenter = Math.abs(inTileX - 0.5) < threshold && Math.abs(inTileY - 0.5) < threshold;
-
     let newDirection = direction;
     let nextX = x;
     let nextY = y;
+    let newPathIndex = pathIndex ?? 0;
 
-    if (nearCenter) {
-      const atIntersection = isAtIntersection(tileX, tileY, this.grid);
-      const laneDir = getLaneDirection(tileX, tileY, this.grid);
-      const nextTileX = tileX + vec.dx;
-      const nextTileY = tileY + vec.dy;
+    // If car has a path, follow it
+    if (path && path.length > 0 && newPathIndex < path.length) {
+      const target = path[newPathIndex];
+      const targetX = target.x + 0.5; // Center of target tile
+      const targetY = target.y + 0.5;
 
-      if (!this.isDrivable(nextTileX, nextTileY)) {
-        const newDir = this.pickCarDirection(car, tileX, tileY, direction, true);
-        if (newDir) {
-          newDirection = newDir;
-        }
-        nextX = tileX + 0.5;
-        nextY = tileY + 0.5;
-      } else if (atIntersection) {
-        const validDirs = this.getValidCarDirections(tileX, tileY);
-        if (validDirs.length >= 3 && Math.random() < 0.25) {
-          const newDir = this.pickCarDirection(car, tileX, tileY, direction, false);
-          if (newDir) {
-            newDirection = newDir;
-            nextX = tileX + 0.5;
-            nextY = tileY + 0.5;
+      // Calculate distance to current waypoint
+      const distToTarget = Math.sqrt((x - targetX) ** 2 + (y - targetY) ** 2);
+
+      // If we've reached the current waypoint, move to the next one
+      if (distToTarget < 0.3) {
+        newPathIndex++;
+        // Check if we've completed the path
+        if (newPathIndex >= path.length) {
+          // Reached final destination - park the car
+          if (destinationBuilding) {
+            return {
+              ...car,
+              x: targetX,
+              y: targetY,
+              isParked: true,
+              parkedAtBuilding: destinationBuilding,
+              destinationBuilding: undefined,
+              path: [],
+              pathIndex: 0,
+              waiting: 0,
+            };
           }
-        }
-      } else if (laneDir && laneDir !== direction) {
-        if (this.getValidCarDirections(tileX, tileY).includes(laneDir)) {
-          newDirection = laneDir;
-          nextX = tileX + 0.5;
-          nextY = tileY + 0.5;
+          return { ...car, x: targetX, y: targetY, path: [], pathIndex: 0, waiting: 0 };
         }
       }
+
+      // Get the current target (may have been updated)
+      const currentTarget = path[newPathIndex];
+      const currentTargetX = currentTarget.x + 0.5;
+      const currentTargetY = currentTarget.y + 0.5;
+
+      // Determine direction to move towards target
+      const dx = currentTargetX - x;
+      const dy = currentTargetY - y;
+
+      // Move in the direction with larger distance first (prioritize one axis)
+      if (Math.abs(dx) > Math.abs(dy)) {
+        newDirection = dx > 0 ? Direction.Right : Direction.Left;
+      } else if (Math.abs(dy) > 0) {
+        newDirection = dy > 0 ? Direction.Down : Direction.Up;
+      }
+    } else {
+      // No path - car shouldn't move, or use random wandering
+      return car;
     }
 
     const moveVec = directionVectors[newDirection];
@@ -855,10 +865,11 @@ export class MainScene extends Phaser.Scene {
         y: tileY + 0.5,
         direction: newDirection,
         waiting: 0,
+        pathIndex: newPathIndex,
       };
     }
 
-    return { ...car, x: nextX, y: nextY, direction: newDirection, waiting: 0 };
+    return { ...car, x: nextX, y: nextY, direction: newDirection, waiting: 0, pathIndex: newPathIndex };
   }
 
   // ============================================
@@ -977,7 +988,7 @@ export class MainScene extends Phaser.Scene {
       this.baseScrollY = this.cameraStartY + dy;
       camera.setScroll(
         Math.round(this.baseScrollX + (this.shakeAxis === "x" ? this.shakeOffset : 0)),
-        Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0))
+        Math.round(this.baseScrollY + (this.shakeAxis === "y" ? this.shakeOffset : 0)),
       );
       return;
     }
@@ -1168,7 +1179,7 @@ export class MainScene extends Phaser.Scene {
     _gameObjects: Phaser.GameObjects.GameObject[],
     _deltaX: number,
     deltaY: number,
-    _deltaZ: number
+    _deltaZ: number,
   ): void {
     if (!this.isReady) return;
 
@@ -1193,7 +1204,7 @@ export class MainScene extends Phaser.Scene {
       currentIndex = MainScene.ZOOM_LEVELS.reduce(
         (closest, z, i) =>
           Math.abs(z - currentZoom) < Math.abs(MainScene.ZOOM_LEVELS[closest] - currentZoom) ? i : closest,
-        0
+        0,
       );
     }
 
@@ -1453,6 +1464,8 @@ export class MainScene extends Phaser.Scene {
       waiting: 0,
       carType,
       isParked: false,
+      path: [],
+      pathIndex: 0,
     };
 
     this.cars.push(newCar);
@@ -1460,7 +1473,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   // Find a parking spot (asphalt tile) near a building
-  private findParkingSpotNearBuilding(buildingOriginX: number, buildingOriginY: number): { x: number; y: number } | null {
+  private findParkingSpotNearBuilding(
+    buildingOriginX: number,
+    buildingOriginY: number,
+  ): { x: number; y: number } | null {
     const cell = this.grid[buildingOriginY]?.[buildingOriginX];
     if (!cell || cell.type !== TileType.Building || !cell.buildingId) {
       return null;
@@ -1492,7 +1508,7 @@ export class MainScene extends Phaser.Scene {
 
         // Check if there's already a car parked here
         const hasParkedCar = this.cars.some(
-          (car) => car.isParked && Math.floor(car.x) === tx && Math.floor(car.y) === ty
+          (car) => car.isParked && Math.floor(car.x) === tx && Math.floor(car.y) === ty,
         );
         if (hasParkedCar) continue;
 
@@ -1549,11 +1565,82 @@ export class MainScene extends Phaser.Scene {
       waiting: 0,
       carType,
       isParked: true,
+      path: [],
+      pathIndex: 0,
       parkedAtBuilding: { x: buildingOriginX, y: buildingOriginY },
     };
 
     this.cars.push(newCar);
     return carId;
+  }
+
+  private getHeuristic(x: number, y: number, endX: number, endY: number): number {
+    return Math.abs(x - endX) + Math.abs(y - endY);
+  }
+
+  private computePath(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+  ): Array<{ x: number; y: number }> | null {
+    const g: number[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(0));
+    const visited: boolean[][] = Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_WIDTH).fill(false));
+    const set = new PriorityQueue<{ x: number; y: number }>((a, b) => {
+      const g1 = g[a.y][a.x] + this.getHeuristic(a.x, a.y, endX, endY);
+      const g2 = g[b.y][b.x] + this.getHeuristic(b.x, b.y, endX, endY);
+
+      return g1 - g2;
+    });
+    const came_from: { x: number; y: number }[][] = Array.from({ length: GRID_HEIGHT }, () =>
+      new Array(GRID_WIDTH).fill({ x: -1, y: -1 }),
+    );
+
+    console.log({ startX, startY, endX, endY, g, visited, came_from, x: g.length, y: g[0].length });
+    g[startY][startX] = 0;
+    visited[startY][startX] = true;
+    set.enqueue({ x: startX, y: startY });
+
+    while (!set.isEmpty()) {
+      const lowestNode = set.dequeue();
+      if (!lowestNode) break;
+
+      if (lowestNode.x == endX && lowestNode.y == endY) {
+        // Reached destination
+        const path: Array<{ x: number; y: number }> = [];
+
+        let current: { x: number; y: number } = { x: endX, y: endY };
+        while (true) {
+          if (current.x === startX && current.y === startY) {
+            break;
+          }
+          path.push({ x: current.x, y: current.y });
+          current = came_from[current.y][current.x];
+        }
+
+        return path.reverse();
+      }
+
+      visited[lowestNode.y][lowestNode.x] = true;
+
+      const directions = this.getValidCarDirections(lowestNode.x, lowestNode.y);
+      for (const direction of directions) {
+        const cellX = lowestNode.x + directionVectors[direction].dx;
+        const cellY = lowestNode.y + directionVectors[direction].dy;
+
+        if (!visited[cellY][cellX]) {
+          const tentative_g = g[lowestNode.y][lowestNode.x] + 1;
+          const is_neighbour_in_set = set.contains(({ x, y }) => x === cellX && y === cellY);
+          if (!is_neighbour_in_set || tentative_g < g[cellY][cellX]) {
+            set.enqueue({ x: cellX, y: cellY });
+            g[cellY][cellX] = tentative_g;
+            came_from[cellY][cellX] = { x: lowestNode.x, y: lowestNode.y };
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   // Initiate a car trip from its current location to a destination building
@@ -1569,11 +1656,26 @@ export class MainScene extends Phaser.Scene {
       return false;
     }
 
+    const destParkingSpot = this.findParkingSpotNearBuilding(destBuildingOriginX, destBuildingOriginY);
+    if (!destParkingSpot) {
+      return false;
+    }
+
+    const path = this.computePath(Math.floor(car.x), Math.floor(car.y), destParkingSpot.x, destParkingSpot.y);
+
+    if (!path) {
+      return false;
+    }
+
+    console.log({ path });
+
     // Start the car moving
     this.cars[carIndex] = {
       ...car,
       isParked: false,
       destinationBuilding: { x: destBuildingOriginX, y: destBuildingOriginY },
+      path,
+      pathIndex: 0,
     };
 
     return true;
@@ -1611,6 +1713,8 @@ export class MainScene extends Phaser.Scene {
           waiting: 0,
           carType: CarType.Jeep,
           isParked: false,
+          path: [],
+          pathIndex: 0,
         };
       }
     } else if (!isDriving) {
@@ -2254,8 +2358,8 @@ export class MainScene extends Phaser.Scene {
         this.carSprites.set(car.id, sprite);
 
         sprite.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-          this.events_.onCarClick?.(car.id)
-        })
+          this.events_.onCarClick?.(car.id);
+        });
       } else {
         sprite.setPosition(screenPos.x, groundY);
         sprite.setTexture(textureKey);

@@ -86,8 +86,9 @@ export interface Car {
   speed: number;
   waiting: number;
   carType: CarType;
-  // Parking and trip state
   isParked: boolean;
+  path: Array<{x: number, y: number}>;
+  pathIndex: number
   parkedAtBuilding?: BuildingOrigin;
   destinationBuilding?: BuildingOrigin;
 }

@@ -65,7 +65,7 @@ const createEmptyGrid = (): GridCell[][] => {
       x,
       y,
       isOrigin: true,
-    }))
+    })),
   );
 };
 
@@ -90,7 +90,13 @@ const findClosestZoomIndex = (zoomValue: number): number => {
 export interface GameBoardProps {
   /** Optional custom initial grid. If not provided, uses default city layout. */
   initialGrid?: GridCell[][] | (() => GridCell[][]);
-  handleBuildingClick?: (buildingId: string | null, originX: number, originY: number, screenX: number, screenY: number) => void;
+  handleBuildingClick?: (
+    buildingId: string | null,
+    originX: number,
+    originY: number,
+    screenX: number,
+    screenY: number,
+  ) => void;
   handleCarClick?: (carId: string) => void;
 }
 
@@ -461,7 +467,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
 
               if (isRoadSegment) {
                 const neighbors = getAffectedSegments(originX, originY).filter(
-                  (seg) => seg.x !== originX || seg.y !== originY
+                  (seg) => seg.x !== originX || seg.y !== originY,
                 );
 
                 for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
@@ -547,7 +553,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
         return newGrid;
       });
     },
-    [selectedTool, selectedBuildingId, buildingOrientation]
+    [selectedTool, selectedBuildingId, buildingOrientation],
   );
 
   // Handle batch tile placement from drag operations (snow/tile tools)
@@ -616,7 +622,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
         return newGrid;
       });
     },
-    [selectedTool]
+    [selectedTool],
   );
 
   // Handle batch road segment placement from drag operations
@@ -708,7 +714,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
           if (isRoadSegment) {
             // Delete road segment
             const neighbors = getAffectedSegments(originX, originY).filter(
-              (seg) => seg.x !== originX || seg.y !== originY
+              (seg) => seg.x !== originX || seg.y !== originY,
             );
 
             for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
@@ -844,7 +850,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
       // Single item - delete immediately without confirmation
       performDeletion(tiles);
     },
-    [grid, performDeletion]
+    [grid, performDeletion],
   );
 
   // Spawn handlers (delegate to Phaser)
@@ -871,6 +877,21 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
           message: "Please place some roads with asphalt first!",
         });
       }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (phaserGameRef.current) {
+      const success = phaserGameRef.current.spawnCarAtBuilding(12, 14);
+      console.log(success);
+
+      setTimeout(() => {
+        if (success && phaserGameRef.current) {
+          console.log('Initiating car trip')
+          const initiate = phaserGameRef.current.initiateCarTrip(success, 30, 29);
+          console.log('Initiated car trip? ', initiate)
+        }
+      }, 5 * 1000);
     }
   }, []);
 
