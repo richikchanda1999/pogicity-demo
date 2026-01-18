@@ -14,6 +14,7 @@ import {
   ToolType,
   CHARACTER_SPEED,
   CAR_SPEED,
+  BuildingOrigin,
 } from "../types";
 import { GRID_OFFSET_X, GRID_OFFSET_Y } from "./gameConfig";
 import {
@@ -29,17 +30,20 @@ import {
   canTurnAtTile,
   getUTurnDirection,
 } from "../roadUtils";
-import {
-  BUILDINGS,
-  getBuilding,
-  getBuildingFootprint,
-  BuildingDefinition,
-} from "@/app/data/buildings";
+import { BUILDINGS, getBuilding, getBuildingFootprint, BuildingDefinition } from "@/app/data/buildings";
 import { loadGifAsAnimation, playGifAnimation } from "./GifLoader";
 
 // Event types for React communication
 export interface SceneEvents {
   onTileClick: (x: number, y: number) => void;
+  onBuildingClick?: (
+    buildingId: string,
+    originX: number,
+    originY: number,
+    screenX: number,
+    screenY: number
+  ) => void;
+  onCarClick?: (carId: string) => void;
   onTileHover: (x: number | null, y: number | null) => void;
   onTilesDrag?: (tiles: Array<{ x: number; y: number }>) => void;
   onEraserDrag?: (tiles: Array<{ x: number; y: number }>) => void;
@@ -66,12 +70,7 @@ const oppositeDirection: Record<Direction, Direction> = {
 };
 
 // All directions as array
-const allDirections = [
-  Direction.Up,
-  Direction.Down,
-  Direction.Left,
-  Direction.Right,
-];
+const allDirections = [Direction.Up, Direction.Down, Direction.Left, Direction.Right];
 
 // Deterministic snow variant based on grid position
 function getSnowTextureKey(x: number, y: number): string {
@@ -87,6 +86,7 @@ export class MainScene extends Phaser.Scene {
   // Sprite containers
   private tileSprites: Map<string, Phaser.GameObjects.Image> = new Map();
   private buildingSprites: Map<string, Phaser.GameObjects.Image> = new Map();
+  private buildingHitZones: Map<string, Phaser.GameObjects.Zone> = new Map();
   private glowSprites: Map<string, Phaser.GameObjects.GameObject> = new Map();
   private carSprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private characterSprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
@@ -222,18 +222,7 @@ export class MainScene extends Phaser.Scene {
       this.input.keyboard.on("keydown", (event: KeyboardEvent) => {
         if (this.isPlayerDriving) {
           const key = event.key.toLowerCase();
-          if (
-            [
-              "arrowup",
-              "arrowdown",
-              "arrowleft",
-              "arrowright",
-              "w",
-              "a",
-              "s",
-              "d",
-            ].includes(key)
-          ) {
+          if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
             this.pressedKeys.add(key);
           }
         }
@@ -368,12 +357,7 @@ export class MainScene extends Phaser.Scene {
     if (fps < 30) fpsColor = "#ff0000"; // Red = bad
 
     this.statsText.setText(
-      [
-        `FPS: ${fps}`,
-        `Characters: ${charCount}`,
-        `Cars: ${carCount}`,
-        `Phaser-managed ✓`,
-      ].join("\n")
+      [`FPS: ${fps}`, `Characters: ${charCount}`, `Cars: ${carCount}`, `Phaser-managed ✓`].join("\n")
     );
     this.statsText.setColor(fpsColor);
   }
@@ -396,10 +380,7 @@ export class MainScene extends Phaser.Scene {
       // Start with a small "down" impact (positive scrollY), then a smaller up rebound.
       // Phase ease: advance faster early so the first downward hit is snappier
       const phaseT = Math.sqrt(t);
-      const wave =
-        Math.sin(phaseT * this.shakeCycles * Math.PI * 2) *
-        this.shakeIntensity *
-        envelope;
+      const wave = Math.sin(phaseT * this.shakeCycles * Math.PI * 2) * this.shakeIntensity * envelope;
       this.shakeOffset = wave < 0 ? wave * 0.45 : wave;
     } else {
       this.shakeOffset = 0;
@@ -460,11 +441,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   // Trigger screen shake effect (like SimCity 4 building placement)
-  shakeScreen(
-    axis: "x" | "y" = "y",
-    intensity: number = 2,
-    duration: number = 150
-  ): void {
+  shakeScreen(axis: "x" | "y" = "y", intensity: number = 2, duration: number = 150): void {
     this.shakeAxis = axis;
     this.shakeIntensity = intensity;
     this.shakeDuration = duration;
@@ -500,11 +477,7 @@ export class MainScene extends Phaser.Scene {
     return valid;
   }
 
-  private pickNewDirection(
-    tileX: number,
-    tileY: number,
-    currentDir: Direction
-  ): Direction | null {
+  private pickNewDirection(tileX: number, tileY: number, currentDir: Direction): Direction | null {
     const validDirs = this.getValidDirections(tileX, tileY);
     if (validDirs.length === 0) return null;
 
@@ -538,14 +511,12 @@ export class MainScene extends Phaser.Scene {
         }
       }
       if (walkableTiles.length > 0) {
-        const newTile =
-          walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
+        const newTile = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
         return {
           ...char,
           x: newTile.x + 0.5,
           y: newTile.y + 0.5,
-          direction:
-            allDirections[Math.floor(Math.random() * allDirections.length)],
+          direction: allDirections[Math.floor(Math.random() * allDirections.length)],
         };
       }
       return char;
@@ -554,9 +525,7 @@ export class MainScene extends Phaser.Scene {
     const inTileX = x - tileX;
     const inTileY = y - tileY;
     const threshold = speed * 3;
-    const nearCenter =
-      Math.abs(inTileX - 0.5) < threshold &&
-      Math.abs(inTileY - 0.5) < threshold;
+    const nearCenter = Math.abs(inTileX - 0.5) < threshold && Math.abs(inTileY - 0.5) < threshold;
 
     let newDirection = direction;
     let nextX = x;
@@ -633,11 +602,7 @@ export class MainScene extends Phaser.Scene {
     return valid;
   }
 
-  private isDirectionClear(
-    car: Car,
-    dir: Direction,
-    checkDist: number = 1.2
-  ): boolean {
+  private isDirectionClear(car: Car, dir: Direction, checkDist: number = 1.2): boolean {
     const vec = directionVectors[dir];
     const aheadX = car.x + vec.dx * checkDist;
     const aheadY = car.y + vec.dy * checkDist;
@@ -645,9 +610,7 @@ export class MainScene extends Phaser.Scene {
     const allCars = this.playerCar ? [...this.cars, this.playerCar] : this.cars;
     for (const other of allCars) {
       if (other.id === car.id) continue;
-      const dist = Math.sqrt(
-        Math.pow(other.x - aheadX, 2) + Math.pow(other.y - aheadY, 2)
-      );
+      const dist = Math.sqrt(Math.pow(other.x - aheadX, 2) + Math.pow(other.y - aheadY, 2));
       if (dist < 0.7) return false;
     }
     return true;
@@ -683,10 +646,7 @@ export class MainScene extends Phaser.Scene {
         return null;
       }
 
-      if (
-        validDirs.includes(currentDir) &&
-        this.isDirectionClear(car, currentDir)
-      ) {
+      if (validDirs.includes(currentDir) && this.isDirectionClear(car, currentDir)) {
         return currentDir;
       }
 
@@ -698,26 +658,18 @@ export class MainScene extends Phaser.Scene {
       return canTurnAtTile(tileX, tileY, currentDir, d);
     });
 
-    if (
-      validDirs.includes(currentDir) &&
-      !turnableChoices.includes(currentDir)
-    ) {
+    if (validDirs.includes(currentDir) && !turnableChoices.includes(currentDir)) {
       turnableChoices.push(currentDir);
     }
 
     if (turnableChoices.length === 0) {
-      if (
-        validDirs.includes(currentDir) &&
-        this.isDirectionClear(car, currentDir)
-      ) {
+      if (validDirs.includes(currentDir) && this.isDirectionClear(car, currentDir)) {
         return currentDir;
       }
       return null;
     }
 
-    const clearChoices = turnableChoices.filter((d) =>
-      this.isDirectionClear(car, d)
-    );
+    const clearChoices = turnableChoices.filter((d) => this.isDirectionClear(car, d));
 
     if (clearChoices.length === 0) {
       return null;
@@ -762,10 +714,35 @@ export class MainScene extends Phaser.Scene {
   }
 
   private updateSingleCar(car: Car): Car {
-    const { x, y, direction, speed, waiting } = car;
+    // If car is parked, don't update its position
+    if (car.isParked) {
+      return car;
+    }
+
+    const { x, y, direction, speed, waiting, destinationBuilding } = car;
     const vec = directionVectors[direction];
     const tileX = Math.floor(x);
     const tileY = Math.floor(y);
+
+    // Check if car has reached its destination building
+    if (destinationBuilding) {
+      const parkingSpot = this.findParkingSpotNearBuilding(destinationBuilding.x, destinationBuilding.y);
+      if (parkingSpot) {
+        const distToParking = Math.sqrt((x - (parkingSpot.x + 0.5)) ** 2 + (y - (parkingSpot.y + 0.5)) ** 2);
+        if (distToParking < 0.8) {
+          // Park the car
+          return {
+            ...car,
+            x: parkingSpot.x + 0.5,
+            y: parkingSpot.y + 0.5,
+            isParked: true,
+            parkedAtBuilding: destinationBuilding,
+            destinationBuilding: undefined,
+            waiting: 0,
+          };
+        }
+      }
+    }
 
     if (!this.isDrivable(tileX, tileY)) {
       const asphaltTiles: { x: number; y: number }[] = [];
@@ -777,8 +754,7 @@ export class MainScene extends Phaser.Scene {
         }
       }
       if (asphaltTiles.length > 0) {
-        const newTile =
-          asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
+        const newTile = asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
         const laneDir = getLaneDirection(newTile.x, newTile.y, this.grid);
         return {
           ...car,
@@ -799,13 +775,7 @@ export class MainScene extends Phaser.Scene {
 
       if (newWaiting > MAX_WAIT_FRAMES) {
         if (isAtIntersection(tileX, tileY, this.grid)) {
-          const altDir = this.pickCarDirection(
-            car,
-            tileX,
-            tileY,
-            direction,
-            true
-          );
+          const altDir = this.pickCarDirection(car, tileX, tileY, direction, true);
           if (altDir && altDir !== direction) {
             return {
               ...car,
@@ -829,9 +799,7 @@ export class MainScene extends Phaser.Scene {
     const inTileX = x - tileX;
     const inTileY = y - tileY;
     const threshold = speed * 2;
-    const nearCenter =
-      Math.abs(inTileX - 0.5) < threshold &&
-      Math.abs(inTileY - 0.5) < threshold;
+    const nearCenter = Math.abs(inTileX - 0.5) < threshold && Math.abs(inTileY - 0.5) < threshold;
 
     let newDirection = direction;
     let nextX = x;
@@ -844,13 +812,7 @@ export class MainScene extends Phaser.Scene {
       const nextTileY = tileY + vec.dy;
 
       if (!this.isDrivable(nextTileX, nextTileY)) {
-        const newDir = this.pickCarDirection(
-          car,
-          tileX,
-          tileY,
-          direction,
-          true
-        );
+        const newDir = this.pickCarDirection(car, tileX, tileY, direction, true);
         if (newDir) {
           newDirection = newDir;
         }
@@ -859,13 +821,7 @@ export class MainScene extends Phaser.Scene {
       } else if (atIntersection) {
         const validDirs = this.getValidCarDirections(tileX, tileY);
         if (validDirs.length >= 3 && Math.random() < 0.25) {
-          const newDir = this.pickCarDirection(
-            car,
-            tileX,
-            tileY,
-            direction,
-            false
-          );
+          const newDir = this.pickCarDirection(car, tileX, tileY, direction, false);
           if (newDir) {
             newDirection = newDir;
             nextX = tileX + 0.5;
@@ -925,10 +881,7 @@ export class MainScene extends Phaser.Scene {
       desiredDir = Direction.Down;
     } else if (this.pressedKeys.has("arrowleft") || this.pressedKeys.has("a")) {
       desiredDir = Direction.Left;
-    } else if (
-      this.pressedKeys.has("arrowright") ||
-      this.pressedKeys.has("d")
-    ) {
+    } else if (this.pressedKeys.has("arrowright") || this.pressedKeys.has("d")) {
       desiredDir = Direction.Right;
     }
 
@@ -1007,11 +960,7 @@ export class MainScene extends Phaser.Scene {
     };
   }
 
-  private depthFromSortPoint(
-    sortX: number,
-    sortY: number,
-    layerOffset: number = 0
-  ): number {
+  private depthFromSortPoint(sortX: number, sortY: number, layerOffset: number = 0): number {
     return sortY * this.DEPTH_Y_MULT + sortX + layerOffset;
   }
 
@@ -1039,11 +988,7 @@ export class MainScene extends Phaser.Scene {
     const tileY = Math.floor(gridPos.y);
 
     if (tileX >= 0 && tileX < GRID_WIDTH && tileY >= 0 && tileY < GRID_HEIGHT) {
-      if (
-        !this.hoverTile ||
-        this.hoverTile.x !== tileX ||
-        this.hoverTile.y !== tileY
-      ) {
+      if (!this.hoverTile || this.hoverTile.x !== tileX || this.hoverTile.y !== tileY) {
         this.hoverTile = { x: tileX, y: tileY };
         this.events_.onTileHover(tileX, tileY);
 
@@ -1059,11 +1004,7 @@ export class MainScene extends Phaser.Scene {
         }
 
         // If dragging with road tool, add road segments in straight line
-        if (
-          this.isDragging &&
-          this.selectedTool === ToolType.RoadNetwork &&
-          this.dragStartTile
-        ) {
+        if (this.isDragging && this.selectedTool === ToolType.RoadNetwork && this.dragStartTile) {
           // Determine direction on first movement
           if (this.dragDirection === null) {
             const dx = Math.abs(tileX - this.dragStartTile.x);
@@ -1086,40 +1027,26 @@ export class MainScene extends Phaser.Scene {
             // Only add segments along horizontal line
             const startX = Math.min(this.dragStartTile.x, tileX);
             const endX = Math.max(this.dragStartTile.x, tileX);
-            const startSegment = getRoadSegmentOrigin(
-              startX,
-              this.dragStartTile.y
-            );
+            const startSegment = getRoadSegmentOrigin(startX, this.dragStartTile.y);
             const endSegment = getRoadSegmentOrigin(endX, this.dragStartTile.y);
 
             const startSegX = Math.min(startSegment.x, endSegment.x);
             const endSegX = Math.max(startSegment.x, endSegment.x);
 
-            for (
-              let segX = startSegX;
-              segX <= endSegX;
-              segX += ROAD_SEGMENT_SIZE
-            ) {
+            for (let segX = startSegX; segX <= endSegX; segX += ROAD_SEGMENT_SIZE) {
               this.dragTiles.add(`${segX},${startSegment.y}`);
             }
           } else if (this.dragDirection === "vertical") {
             // Only add segments along vertical line
             const startY = Math.min(this.dragStartTile.y, tileY);
             const endY = Math.max(this.dragStartTile.y, tileY);
-            const startSegment = getRoadSegmentOrigin(
-              this.dragStartTile.x,
-              startY
-            );
+            const startSegment = getRoadSegmentOrigin(this.dragStartTile.x, startY);
             const endSegment = getRoadSegmentOrigin(this.dragStartTile.x, endY);
 
             const startSegY = Math.min(startSegment.y, endSegment.y);
             const endSegY = Math.max(startSegment.y, endSegment.y);
 
-            for (
-              let segY = startSegY;
-              segY <= endSegY;
-              segY += ROAD_SEGMENT_SIZE
-            ) {
+            for (let segY = startSegY; segY <= endSegY; segY += ROAD_SEGMENT_SIZE) {
               this.dragTiles.add(`${startSegment.x},${segY}`);
             }
           }
@@ -1145,8 +1072,7 @@ export class MainScene extends Phaser.Scene {
     if (pointer.leftButtonDown()) {
       // Check if we should start panning (no tool selected OR clicking empty space with no active tool)
       const shouldPan =
-        this.selectedTool === ToolType.None ||
-        (this.selectedTool === ToolType.Building && !this.hoverTile);
+        this.selectedTool === ToolType.None || (this.selectedTool === ToolType.Building && !this.hoverTile);
 
       if (shouldPan) {
         // Start camera panning
@@ -1175,10 +1101,7 @@ export class MainScene extends Phaser.Scene {
 
           if (this.selectedTool === ToolType.RoadNetwork) {
             // For roads, add the initial segment origin
-            const segmentOrigin = getRoadSegmentOrigin(
-              this.hoverTile.x,
-              this.hoverTile.y
-            );
+            const segmentOrigin = getRoadSegmentOrigin(this.hoverTile.x, this.hoverTile.y);
             this.dragTiles.add(`${segmentOrigin.x},${segmentOrigin.y}`);
           } else {
             // For other tools, add the tile directly
@@ -1208,16 +1131,10 @@ export class MainScene extends Phaser.Scene {
       });
 
       if (tiles.length > 0) {
-        if (
-          this.selectedTool === ToolType.Eraser &&
-          this.events_.onEraserDrag
-        ) {
+        if (this.selectedTool === ToolType.Eraser && this.events_.onEraserDrag) {
           // Eraser uses confirmation dialog
           this.events_.onEraserDrag(tiles);
-        } else if (
-          this.selectedTool === ToolType.RoadNetwork &&
-          this.events_.onRoadDrag
-        ) {
+        } else if (this.selectedTool === ToolType.RoadNetwork && this.events_.onRoadDrag) {
           // Road drag - segments are already in dragTiles
           this.events_.onRoadDrag(tiles);
         } else if (this.events_.onTilesDrag) {
@@ -1273,13 +1190,15 @@ export class MainScene extends Phaser.Scene {
     const currentZoom = camera.zoom;
     let currentIndex = MainScene.ZOOM_LEVELS.indexOf(currentZoom);
     if (currentIndex === -1) {
-      currentIndex = MainScene.ZOOM_LEVELS.reduce((closest, z, i) =>
-        Math.abs(z - currentZoom) < Math.abs(MainScene.ZOOM_LEVELS[closest] - currentZoom) ? i : closest, 0);
+      currentIndex = MainScene.ZOOM_LEVELS.reduce(
+        (closest, z, i) =>
+          Math.abs(z - currentZoom) < Math.abs(MainScene.ZOOM_LEVELS[closest] - currentZoom) ? i : closest,
+        0
+      );
     }
 
-    const newIndex = direction > 0
-      ? Math.max(0, currentIndex - 1)
-      : Math.min(MainScene.ZOOM_LEVELS.length - 1, currentIndex + 1);
+    const newIndex =
+      direction > 0 ? Math.max(0, currentIndex - 1) : Math.min(MainScene.ZOOM_LEVELS.length - 1, currentIndex + 1);
 
     const newZoom = MainScene.ZOOM_LEVELS[newIndex];
     if (newZoom === currentZoom) return;
@@ -1307,7 +1226,7 @@ export class MainScene extends Phaser.Scene {
     this.zoomLevel = newZoom;
     this.zoomHandledInternally = true;
 
-    this.events.emit('zoomChanged', newZoom);
+    this.events.emit("zoomChanged", newZoom);
   }
 
   setEventCallbacks(events: SceneEvents): void {
@@ -1375,10 +1294,7 @@ export class MainScene extends Phaser.Scene {
 
       // Check if an old building was here
       const oldBuildingKey = `building_${x},${y}`;
-      if (
-        this.buildingSprites.has(oldBuildingKey) &&
-        (cell.type !== TileType.Building || !cell.isOrigin)
-      ) {
+      if (this.buildingSprites.has(oldBuildingKey) && (cell.type !== TileType.Building || !cell.isOrigin)) {
         buildingsToRemove.add(oldBuildingKey);
       }
     }
@@ -1423,13 +1339,9 @@ export class MainScene extends Phaser.Scene {
     } else if (cell.type === TileType.Building) {
       if (cell.buildingId) {
         const building = getBuilding(cell.buildingId);
-        const preservesTile =
-          building && (building.category === "props" || building.isDecoration);
+        const preservesTile = building && (building.category === "props" || building.isDecoration);
         if (preservesTile && cell.underlyingTileType) {
-          if (
-            cell.underlyingTileType === TileType.Tile ||
-            cell.underlyingTileType === TileType.Road
-          ) {
+          if (cell.underlyingTileType === TileType.Tile || cell.underlyingTileType === TileType.Road) {
             textureKey = "road";
           } else if (cell.underlyingTileType === TileType.Asphalt) {
             textureKey = "asphalt";
@@ -1482,15 +1394,13 @@ export class MainScene extends Phaser.Scene {
 
     const roadTile = roadTiles[Math.floor(Math.random() * roadTiles.length)];
     const characterTypes = [CharacterType.Banana, CharacterType.Apple];
-    const randomCharacterType =
-      characterTypes[Math.floor(Math.random() * characterTypes.length)];
+    const randomCharacterType = characterTypes[Math.floor(Math.random() * characterTypes.length)];
 
     const newCharacter: Character = {
       id: generateId(),
       x: roadTile.x + 0.5,
       y: roadTile.y + 0.5,
-      direction:
-        allDirections[Math.floor(Math.random() * allDirections.length)],
+      direction: allDirections[Math.floor(Math.random() * allDirections.length)],
       speed: CHARACTER_SPEED,
       characterType: randomCharacterType,
     };
@@ -1512,14 +1422,12 @@ export class MainScene extends Phaser.Scene {
 
     if (asphaltTiles.length === 0) return false;
 
-    const asphaltTile =
-      asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
+    const asphaltTile = asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
     const validDirs = allDirections.filter((dir) => {
       const vec = directionVectors[dir];
       const nx = asphaltTile.x + vec.dx;
       const ny = asphaltTile.y + vec.dy;
-      if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT)
-        return false;
+      if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) return false;
       return this.grid[ny][nx].type === TileType.Asphalt;
     });
 
@@ -1531,8 +1439,7 @@ export class MainScene extends Phaser.Scene {
     } else if (validDirs.length > 0) {
       direction = validDirs[Math.floor(Math.random() * validDirs.length)];
     } else {
-      direction =
-        allDirections[Math.floor(Math.random() * allDirections.length)];
+      direction = allDirections[Math.floor(Math.random() * allDirections.length)];
     }
 
     const carType = Math.random() < 0.5 ? CarType.Taxi : CarType.Jeep;
@@ -1545,10 +1452,136 @@ export class MainScene extends Phaser.Scene {
       speed: CAR_SPEED + (Math.random() - 0.5) * 0.005,
       waiting: 0,
       carType,
+      isParked: false,
     };
 
     this.cars.push(newCar);
     return true;
+  }
+
+  // Find a parking spot (asphalt tile) near a building
+  private findParkingSpotNearBuilding(buildingOriginX: number, buildingOriginY: number): { x: number; y: number } | null {
+    const cell = this.grid[buildingOriginY]?.[buildingOriginX];
+    if (!cell || cell.type !== TileType.Building || !cell.buildingId) {
+      return null;
+    }
+
+    const buildingDef = getBuilding(cell.buildingId);
+    if (!buildingDef) return null;
+
+    const orientation = cell.buildingOrientation || Direction.Down;
+    const footprint = getBuildingFootprint(buildingDef, orientation);
+
+    // Search for asphalt tiles around the building perimeter
+    const candidates: { x: number; y: number; dist: number }[] = [];
+    const searchRadius = 3; // How far from building edge to search
+
+    for (let dy = -searchRadius; dy <= footprint.height + searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= footprint.width + searchRadius; dx++) {
+        const tx = buildingOriginX + dx;
+        const ty = buildingOriginY + dy;
+
+        // Skip tiles inside the building footprint
+        if (dx >= 0 && dx < footprint.width && dy >= 0 && dy < footprint.height) continue;
+
+        // Check bounds
+        if (tx < 0 || tx >= GRID_WIDTH || ty < 0 || ty >= GRID_HEIGHT) continue;
+
+        // Check if it's asphalt
+        if (this.grid[ty][tx].type !== TileType.Asphalt) continue;
+
+        // Check if there's already a car parked here
+        const hasParkedCar = this.cars.some(
+          (car) => car.isParked && Math.floor(car.x) === tx && Math.floor(car.y) === ty
+        );
+        if (hasParkedCar) continue;
+
+        // Calculate distance to building center for sorting
+        const centerX = buildingOriginX + footprint.width / 2;
+        const centerY = buildingOriginY + footprint.height / 2;
+        const dist = Math.sqrt((tx - centerX) ** 2 + (ty - centerY) ** 2);
+
+        candidates.push({ x: tx, y: ty, dist });
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Sort by distance (closest first) and return the closest
+    candidates.sort((a, b) => a.dist - b.dist);
+    return { x: candidates[0].x, y: candidates[0].y };
+  }
+
+  // Spawn a car parked at a specific building
+  spawnCarAtBuilding(buildingOriginX: number, buildingOriginY: number): string | null {
+    const parkingSpot = this.findParkingSpotNearBuilding(buildingOriginX, buildingOriginY);
+    if (!parkingSpot) return null;
+
+    // Determine direction facing toward the building
+    const cell = this.grid[buildingOriginY]?.[buildingOriginX];
+    const buildingDef = cell?.buildingId ? getBuilding(cell.buildingId) : null;
+    const orientation = cell?.buildingOrientation || Direction.Down;
+    const footprint = buildingDef ? getBuildingFootprint(buildingDef, orientation) : { width: 1, height: 1 };
+
+    const centerX = buildingOriginX + footprint.width / 2;
+    const centerY = buildingOriginY + footprint.height / 2;
+
+    // Pick direction based on relative position
+    let direction: Direction;
+    const dx = centerX - parkingSpot.x;
+    const dy = centerY - parkingSpot.y;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      direction = dx > 0 ? Direction.Right : Direction.Left;
+    } else {
+      direction = dy > 0 ? Direction.Down : Direction.Up;
+    }
+
+    const carType = Math.random() < 0.5 ? CarType.Taxi : CarType.Jeep;
+    const carId = generateId();
+
+    const newCar: Car = {
+      id: carId,
+      x: parkingSpot.x + 0.5,
+      y: parkingSpot.y + 0.5,
+      direction,
+      speed: CAR_SPEED + (Math.random() - 0.5) * 0.005,
+      waiting: 0,
+      carType,
+      isParked: true,
+      parkedAtBuilding: { x: buildingOriginX, y: buildingOriginY },
+    };
+
+    this.cars.push(newCar);
+    return carId;
+  }
+
+  // Initiate a car trip from its current location to a destination building
+  initiateCarTrip(carId: string, destBuildingOriginX: number, destBuildingOriginY: number): boolean {
+    const carIndex = this.cars.findIndex((c) => c.id === carId);
+    if (carIndex === -1) return false;
+
+    const car = this.cars[carIndex];
+
+    // Verify destination is a valid building
+    const destCell = this.grid[destBuildingOriginY]?.[destBuildingOriginX];
+    if (!destCell || destCell.type !== TileType.Building || !destCell.buildingId) {
+      return false;
+    }
+
+    // Start the car moving
+    this.cars[carIndex] = {
+      ...car,
+      isParked: false,
+      destinationBuilding: { x: destBuildingOriginX, y: destBuildingOriginY },
+    };
+
+    return true;
+  }
+
+  // Get a car by ID
+  getCarById(carId: string): Car | null {
+    return this.cars.find((c) => c.id === carId) || null;
   }
 
   // Enable/disable driving mode
@@ -1568,8 +1601,7 @@ export class MainScene extends Phaser.Scene {
       }
 
       if (asphaltTiles.length > 0) {
-        const asphaltTile =
-          asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
+        const asphaltTile = asphaltTiles[Math.floor(Math.random() * asphaltTiles.length)];
         this.playerCar = {
           id: "player-car",
           x: asphaltTile.x + 0.5,
@@ -1578,6 +1610,7 @@ export class MainScene extends Phaser.Scene {
           speed: CAR_SPEED * 1.5,
           waiting: 0,
           carType: CarType.Jeep,
+          isParked: false,
         };
       }
     } else if (!isDriving) {
@@ -1747,15 +1780,9 @@ export class MainScene extends Phaser.Scene {
           graphics.fillStyle(color, alpha);
           graphics.beginPath();
           graphics.moveTo(screenPos.x, screenPos.y);
-          graphics.lineTo(
-            screenPos.x + TILE_WIDTH / 2,
-            screenPos.y + TILE_HEIGHT / 2
-          );
+          graphics.lineTo(screenPos.x + TILE_WIDTH / 2, screenPos.y + TILE_HEIGHT / 2);
           graphics.lineTo(screenPos.x, screenPos.y + TILE_HEIGHT);
-          graphics.lineTo(
-            screenPos.x - TILE_WIDTH / 2,
-            screenPos.y + TILE_HEIGHT / 2
-          );
+          graphics.lineTo(screenPos.x - TILE_WIDTH / 2, screenPos.y + TILE_HEIGHT / 2);
           graphics.closePath();
           graphics.fillPath();
         }
@@ -1771,6 +1798,8 @@ export class MainScene extends Phaser.Scene {
     this.tileSprites.clear();
     this.buildingSprites.forEach((sprite) => sprite.destroy());
     this.buildingSprites.clear();
+    this.buildingHitZones.forEach((hitZone) => hitZone.destroy());
+    this.buildingHitZones.clear();
     this.glowSprites.forEach((sprite) => sprite.destroy());
     this.glowSprites.clear();
 
@@ -1795,9 +1824,7 @@ export class MainScene extends Phaser.Scene {
         } else if (cell.type === TileType.Building) {
           if (cell.buildingId) {
             const building = getBuilding(cell.buildingId);
-            const preservesTile =
-              building &&
-              (building.category === "props" || building.isDecoration);
+            const preservesTile = building && (building.category === "props" || building.isDecoration);
             if (preservesTile && cell.underlyingTileType) {
               if (cell.underlyingTileType === TileType.Tile) {
                 textureKey = "road";
@@ -1824,16 +1851,10 @@ export class MainScene extends Phaser.Scene {
         tileSprite.setOrigin(0.5, 0);
         // Snow tiles are 88x44 (2x size), others are 44x22
         tileSprite.setScale(textureKey.startsWith("snow_") ? 0.5 * 1.02 : 1.02);
-        tileSprite.setDepth(
-          this.depthFromSortPoint(screenPos.x, screenPos.y, 0)
-        );
+        tileSprite.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 0));
         this.tileSprites.set(key, tileSprite);
 
-        if (
-          cell.type === TileType.Building &&
-          cell.isOrigin &&
-          cell.buildingId
-        ) {
+        if (cell.type === TileType.Building && cell.isOrigin && cell.buildingId) {
           this.renderBuilding(x, y, cell.buildingId, cell.buildingOrientation);
         }
       }
@@ -1848,6 +1869,13 @@ export class MainScene extends Phaser.Scene {
     if (sprite) {
       sprite.destroy();
       this.buildingSprites.delete(buildingKey);
+    }
+
+    // Remove hit zone
+    const hitZone = this.buildingHitZones.get(buildingKey);
+    if (hitZone) {
+      hitZone.destroy();
+      this.buildingHitZones.delete(buildingKey);
     }
 
     // Remove all slices (up to 20 should be more than enough)
@@ -1870,12 +1898,7 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  private renderBuilding(
-    originX: number,
-    originY: number,
-    buildingId: string,
-    orientation?: Direction
-  ): void {
+  private renderBuilding(originX: number, originY: number, buildingId: string, orientation?: Direction): void {
     const building = getBuilding(buildingId);
     if (!building) {
       console.warn(`Building not found in registry: ${buildingId}`);
@@ -1958,8 +1981,7 @@ export class MainScene extends Phaser.Scene {
     const isExtendedDecoration =
       building.isDecoration &&
       building.renderSize &&
-      (building.renderSize.width > footprint.width ||
-        building.renderSize.height > footprint.height);
+      (building.renderSize.width > footprint.width || building.renderSize.height > footprint.height);
 
     // Pre-calculate depth for extended decorations (trees with foliage beyond footprint)
     // Use footprint position + 1/4 the render extension as a balanced middle ground:
@@ -1971,11 +1993,7 @@ export class MainScene extends Phaser.Scene {
     const balancedFrontY = frontY + extendY;
     const balancedGridSum = balancedFrontX + balancedFrontY;
     const balancedScreenY = GRID_OFFSET_Y + (balancedGridSum * TILE_HEIGHT) / 2;
-    const decorationDepth = this.depthFromSortPoint(
-      screenPos.x,
-      balancedScreenY + TILE_HEIGHT / 2,
-      0.06
-    );
+    const decorationDepth = this.depthFromSortPoint(screenPos.x, balancedScreenY + TILE_HEIGHT / 2, 0.06);
 
     // ========================================================================
     // VERTICAL SLICE RENDERING FOR CORRECT ISOMETRIC DEPTH SORTING
@@ -2043,13 +2061,7 @@ export class MainScene extends Phaser.Scene {
         // gridSum = (frontX - i) + frontY
         const sliceGridSum = frontX - i + frontY;
         const sliceScreenY = GRID_OFFSET_Y + (sliceGridSum * TILE_HEIGHT) / 2;
-        slice.setDepth(
-          this.depthFromSortPoint(
-            screenPos.x,
-            sliceScreenY + TILE_HEIGHT / 2,
-            0.05
-          )
-        );
+        slice.setDepth(this.depthFromSortPoint(screenPos.x, sliceScreenY + TILE_HEIGHT / 2, 0.05));
       }
 
       if (sliceIndex === 0) {
@@ -2084,13 +2096,7 @@ export class MainScene extends Phaser.Scene {
         // gridSum = frontX + (frontY - i)
         const sliceGridSum = frontX + frontY - i;
         const sliceScreenY = GRID_OFFSET_Y + (sliceGridSum * TILE_HEIGHT) / 2;
-        slice.setDepth(
-          this.depthFromSortPoint(
-            screenPos.x,
-            sliceScreenY + TILE_HEIGHT / 2,
-            0.05
-          )
-        );
+        slice.setDepth(this.depthFromSortPoint(screenPos.x, sliceScreenY + TILE_HEIGHT / 2, 0.05));
       }
 
       this.buildingSprites.set(`${key}_s${sliceIndex}`, slice);
@@ -2101,6 +2107,36 @@ export class MainScene extends Phaser.Scene {
     if (buildingId === "christmas-lamp") {
       this.addLampGlow(key, screenPos.x, screenPos.y);
     }
+
+    // Create invisible hit zone for hover detection
+    const footprintWidth = footprint.width * TILE_WIDTH;
+    const footprintHeight = footprint.height * TILE_HEIGHT;
+
+    // Zone center: offset from front corner toward back of building
+    // In isometric, we shift left (for width) and up (for height)
+    const zoneCenterX = screenPos.x + ((footprint.height - footprint.width) * TILE_WIDTH) / 4;
+    const zoneCenterY = screenPos.y - ((footprint.width + footprint.height - 2) * TILE_HEIGHT) / 4;
+
+    const hitZone = this.add.zone(zoneCenterX, zoneCenterY, footprintWidth, footprintHeight);
+    hitZone.setInteractive({
+      hitArea: new Phaser.Geom.Polygon([
+        // Diamond shape matching isometric footprint
+        { x: 0, y: -footprintHeight / 2 }, // top
+        { x: footprintWidth / 2, y: 0 }, // right
+        { x: 0, y: footprintHeight / 2 }, // bottom
+        { x: -footprintWidth / 2, y: 0 }, // left
+      ]),
+      hitAreaCallback: Phaser.Geom.Polygon.Contains,
+      useHandCursor: true,
+    });
+
+    hitZone.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y + TILE_HEIGHT, 0.09));
+
+    hitZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      this.events_.onBuildingClick?.(buildingId, originX, originY, pointer.x, pointer.y);
+    });
+
+    this.buildingHitZones.set(key, hitZone);
   }
 
   private addLampGlow(key: string, x: number, tileY: number): void {
@@ -2170,10 +2206,7 @@ export class MainScene extends Phaser.Scene {
     graphics.destroy();
   }
 
-  private getBuildingTextureKey(
-    building: BuildingDefinition,
-    orientation?: Direction
-  ): string {
+  private getBuildingTextureKey(building: BuildingDefinition, orientation?: Direction): string {
     const dirMap: Record<Direction, string> = {
       [Direction.Down]: "south",
       [Direction.Up]: "north",
@@ -2219,6 +2252,10 @@ export class MainScene extends Phaser.Scene {
         sprite = this.add.sprite(screenPos.x, groundY, textureKey);
         sprite.setOrigin(0.5, 1);
         this.carSprites.set(car.id, sprite);
+
+        sprite.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          this.events_.onCarClick?.(car.id)
+        })
       } else {
         sprite.setPosition(screenPos.x, groundY);
         sprite.setTexture(textureKey);
@@ -2249,10 +2286,7 @@ export class MainScene extends Phaser.Scene {
     for (const char of this.characters) {
       const screenPos = this.gridToScreen(char.x, char.y);
       const centerY = screenPos.y + TILE_HEIGHT / 2;
-      const textureKey = this.getCharacterTextureKey(
-        char.characterType,
-        char.direction
-      );
+      const textureKey = this.getCharacterTextureKey(char.characterType, char.direction);
 
       let sprite = this.characterSprites.get(char.id);
       if (!sprite) {
@@ -2277,10 +2311,7 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  private getCharacterTextureKey(
-    charType: CharacterType,
-    direction: Direction
-  ): string {
+  private getCharacterTextureKey(charType: CharacterType, direction: Direction): string {
     const dirMap: Record<Direction, string> = {
       [Direction.Up]: "north",
       [Direction.Down]: "south",
@@ -2322,16 +2353,10 @@ export class MainScene extends Phaser.Scene {
 
       for (const seg of segmentsToPreview) {
         const segmentOrigin = { x: seg.x, y: seg.y };
-        const placementCheck = canPlaceRoadSegment(
-          this.grid,
-          segmentOrigin.x,
-          segmentOrigin.y
-        );
+        const placementCheck = canPlaceRoadSegment(this.grid, segmentOrigin.x, segmentOrigin.y);
         const segmentHasCollision = !placementCheck.valid;
 
-        const tempGrid: GridCell[][] = this.grid.map((row) =>
-          row.map((cell) => ({ ...cell }))
-        );
+        const tempGrid: GridCell[][] = this.grid.map((row) => row.map((cell) => ({ ...cell })));
 
         for (let dy = 0; dy < ROAD_SEGMENT_SIZE; dy++) {
           for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
@@ -2346,11 +2371,7 @@ export class MainScene extends Phaser.Scene {
           }
         }
 
-        const connections = getRoadConnections(
-          tempGrid,
-          segmentOrigin.x,
-          segmentOrigin.y
-        );
+        const connections = getRoadConnections(tempGrid, segmentOrigin.x, segmentOrigin.y);
         const segmentType = getSegmentType(connections);
         const pattern = generateRoadPattern(segmentType);
 
@@ -2359,19 +2380,12 @@ export class MainScene extends Phaser.Scene {
           const py = segmentOrigin.y + tile.dy;
           if (px < GRID_WIDTH && py < GRID_HEIGHT) {
             const screenPos = this.gridToScreen(px, py);
-            const textureKey =
-              tile.type === TileType.Asphalt ? "asphalt" : "road";
-            const preview = this.add.image(
-              screenPos.x,
-              screenPos.y,
-              textureKey
-            );
+            const textureKey = tile.type === TileType.Asphalt ? "asphalt" : "road";
+            const preview = this.add.image(screenPos.x, screenPos.y, textureKey);
             preview.setOrigin(0.5, 0);
             preview.setAlpha(segmentHasCollision ? 0.3 : 0.7);
             if (segmentHasCollision) preview.setTint(0xff0000);
-            preview.setDepth(
-              this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-            );
+            preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
             this.previewSprites.push(preview);
           }
         }
@@ -2399,13 +2413,8 @@ export class MainScene extends Phaser.Scene {
             if (cell.type === TileType.Building && cell.buildingId) {
               const existingBuilding = getBuilding(cell.buildingId);
               hasCollision =
-                !existingBuilding ||
-                (!existingBuilding.isDecoration &&
-                  existingBuilding.category !== "props");
-            } else if (
-              cell.type !== TileType.Grass &&
-              cell.type !== TileType.Snow
-            ) {
+                !existingBuilding || (!existingBuilding.isDecoration && existingBuilding.category !== "props");
+            } else if (cell.type !== TileType.Grass && cell.type !== TileType.Snow) {
               hasCollision = true;
             }
           }
@@ -2414,9 +2423,7 @@ export class MainScene extends Phaser.Scene {
           preview.setOrigin(0.5, 0);
           preview.setAlpha(hasCollision ? 0.3 : 0.7);
           if (hasCollision) preview.setTint(0xff0000);
-          preview.setDepth(
-            this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-          );
+          preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
           this.previewSprites.push(preview);
         }
       }
@@ -2443,14 +2450,8 @@ export class MainScene extends Phaser.Scene {
             if (cell.type === TileType.Building && cell.buildingId) {
               const existingBuilding = getBuilding(cell.buildingId);
               hasCollision =
-                !existingBuilding ||
-                (!existingBuilding.isDecoration &&
-                  existingBuilding.category !== "props");
-            } else if (
-              cell.type !== TileType.Grass &&
-              cell.type !== TileType.Snow &&
-              cell.type !== TileType.Tile
-            ) {
+                !existingBuilding || (!existingBuilding.isDecoration && existingBuilding.category !== "props");
+            } else if (cell.type !== TileType.Grass && cell.type !== TileType.Snow && cell.type !== TileType.Tile) {
               hasCollision = true;
             }
           }
@@ -2459,9 +2460,7 @@ export class MainScene extends Phaser.Scene {
           preview.setOrigin(0.5, 0);
           preview.setAlpha(hasCollision ? 0.3 : 0.7);
           if (hasCollision) preview.setTint(0xff0000);
-          preview.setDepth(
-            this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-          );
+          preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
           this.previewSprites.push(preview);
         }
       }
@@ -2488,60 +2487,37 @@ export class MainScene extends Phaser.Scene {
             if (cell.type === TileType.Building && cell.buildingId) {
               const existingBuilding = getBuilding(cell.buildingId);
               hasCollision =
-                !existingBuilding ||
-                (!existingBuilding.isDecoration &&
-                  existingBuilding.category !== "props");
-            } else if (
-              cell.type !== TileType.Grass &&
-              cell.type !== TileType.Tile
-            ) {
+                !existingBuilding || (!existingBuilding.isDecoration && existingBuilding.category !== "props");
+            } else if (cell.type !== TileType.Grass && cell.type !== TileType.Tile) {
               hasCollision = true;
             }
           }
           const screenPos = this.gridToScreen(tx, ty);
-          const preview = this.add.image(
-            screenPos.x,
-            screenPos.y,
-            getSnowTextureKey(tx, ty)
-          );
+          const preview = this.add.image(screenPos.x, screenPos.y, getSnowTextureKey(tx, ty));
           preview.setOrigin(0.5, 0);
           preview.setScale(0.5); // Snow tiles are 88x44, need to halve
           preview.setAlpha(hasCollision ? 0.3 : 0.7);
           if (hasCollision) preview.setTint(0xff0000);
-          preview.setDepth(
-            this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-          );
+          preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
           this.previewSprites.push(preview);
         }
       }
-    } else if (
-      this.selectedTool === ToolType.Building &&
-      this.selectedBuildingId
-    ) {
+    } else if (this.selectedTool === ToolType.Building && this.selectedBuildingId) {
       const building = getBuilding(this.selectedBuildingId);
       if (!building) return;
 
       // Get footprint based on current orientation
-      const footprint = getBuildingFootprint(
-        building,
-        this.buildingOrientation
-      );
+      const footprint = getBuildingFootprint(building, this.buildingOrientation);
       const originX = x - footprint.width + 1;
       const originY = y - footprint.height + 1;
 
-      const isDecoration =
-        building.category === "props" || building.isDecoration;
+      const isDecoration = building.category === "props" || building.isDecoration;
       let footprintCollision = false;
       for (let dy = 0; dy < footprint.height; dy++) {
         for (let dx = 0; dx < footprint.width; dx++) {
           const tileX = originX + dx;
           const tileY = originY + dy;
-          if (
-            tileX < 0 ||
-            tileY < 0 ||
-            tileX >= GRID_WIDTH ||
-            tileY >= GRID_HEIGHT
-          ) {
+          if (tileX < 0 || tileY < 0 || tileX >= GRID_WIDTH || tileY >= GRID_HEIGHT) {
             footprintCollision = true;
           } else {
             const cell = this.grid[tileY]?.[tileX];
@@ -2551,11 +2527,7 @@ export class MainScene extends Phaser.Scene {
                 // Props/decorations collide with any building (including other props)
                 if (cellType === TileType.Building) {
                   footprintCollision = true;
-                } else if (
-                  cellType !== TileType.Grass &&
-                  cellType !== TileType.Tile &&
-                  cellType !== TileType.Snow
-                ) {
+                } else if (cellType !== TileType.Grass && cellType !== TileType.Tile && cellType !== TileType.Snow) {
                   footprintCollision = true;
                 }
               } else {
@@ -2574,20 +2546,13 @@ export class MainScene extends Phaser.Scene {
           for (let dx = 0; dx < footprint.width; dx++) {
             const tileX = originX + dx;
             const tileY = originY + dy;
-            if (
-              tileX >= 0 &&
-              tileY >= 0 &&
-              tileX < GRID_WIDTH &&
-              tileY < GRID_HEIGHT
-            ) {
+            if (tileX >= 0 && tileY >= 0 && tileX < GRID_WIDTH && tileY < GRID_HEIGHT) {
               const screenPos = this.gridToScreen(tileX, tileY);
               const lotTile = this.add.image(screenPos.x, screenPos.y, "road");
               lotTile.setOrigin(0.5, 0);
               lotTile.setAlpha(footprintCollision ? 0.3 : 0.5);
               if (footprintCollision) lotTile.setTint(0xff0000);
-              lotTile.setDepth(
-                this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-              );
+              lotTile.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
               this.previewSprites.push(lotTile);
             }
           }
@@ -2595,10 +2560,7 @@ export class MainScene extends Phaser.Scene {
       }
 
       // Always show building preview, but tint red if collision
-      const textureKey = this.getBuildingTextureKey(
-        building,
-        this.buildingOrientation
-      );
+      const textureKey = this.getBuildingTextureKey(building, this.buildingOrientation);
       if (this.textures.exists(textureKey)) {
         const frontX = originX + footprint.width - 1;
         const frontY = originY + footprint.height - 1;
@@ -2606,11 +2568,7 @@ export class MainScene extends Phaser.Scene {
         const bottomY = screenPos.y + TILE_HEIGHT;
         const frontGroundY = screenPos.y + TILE_HEIGHT / 2;
 
-        const buildingPreview = this.add.image(
-          screenPos.x,
-          bottomY,
-          textureKey
-        );
+        const buildingPreview = this.add.image(screenPos.x, bottomY, textureKey);
         buildingPreview.setOrigin(0.5, 1);
         buildingPreview.setAlpha(0.7);
 
@@ -2621,9 +2579,7 @@ export class MainScene extends Phaser.Scene {
           buildingPreview.setTint(0xbbddbb);
         }
 
-        buildingPreview.setDepth(
-          this.depthFromSortPoint(screenPos.x, frontGroundY, 1_000_000)
-        );
+        buildingPreview.setDepth(this.depthFromSortPoint(screenPos.x, frontGroundY, 1_000_000));
         this.previewSprites.push(buildingPreview);
       }
     } else if (this.selectedTool === ToolType.Eraser) {
@@ -2657,9 +2613,7 @@ export class MainScene extends Phaser.Scene {
             preview.setOrigin(0.5, 0);
             preview.setAlpha(0.3);
             preview.setTint(0xff0000);
-            preview.setDepth(
-              this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-            );
+            preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
             this.previewSprites.push(preview);
           }
         } else {
@@ -2680,32 +2634,17 @@ export class MainScene extends Phaser.Scene {
               for (let dx = 0; dx < ROAD_SEGMENT_SIZE; dx++) {
                 const px = originX + dx;
                 const py = originY + dy;
-                if (
-                  px < GRID_WIDTH &&
-                  py < GRID_HEIGHT &&
-                  !previewedTiles.has(`${px},${py}`)
-                ) {
+                if (px < GRID_WIDTH && py < GRID_HEIGHT && !previewedTiles.has(`${px},${py}`)) {
                   previewedTiles.add(`${px},${py}`);
                   const tileCell = this.grid[py]?.[px];
                   if (tileCell && tileCell.type !== TileType.Grass) {
                     const screenPos = this.gridToScreen(px, py);
-                    const textureKey =
-                      tileCell.type === TileType.Asphalt ? "asphalt" : "road";
-                    const preview = this.add.image(
-                      screenPos.x,
-                      screenPos.y,
-                      textureKey
-                    );
+                    const textureKey = tileCell.type === TileType.Asphalt ? "asphalt" : "road";
+                    const preview = this.add.image(screenPos.x, screenPos.y, textureKey);
                     preview.setOrigin(0.5, 0);
                     preview.setAlpha(0.7);
                     preview.setTint(0xff0000);
-                    preview.setDepth(
-                      this.depthFromSortPoint(
-                        screenPos.x,
-                        screenPos.y,
-                        1_000_000
-                      )
-                    );
+                    preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
                     this.previewSprites.push(preview);
                   }
                 }
@@ -2716,10 +2655,7 @@ export class MainScene extends Phaser.Scene {
             const building = getBuilding(cell.buildingId);
             if (!building) continue;
 
-            const footprint = getBuildingFootprint(
-              building,
-              cell.buildingOrientation
-            );
+            const footprint = getBuildingFootprint(building, cell.buildingOrientation);
             const buildingKey = `building_${originX},${originY}`;
 
             if (!previewedTiles.has(buildingKey)) {
@@ -2732,31 +2668,18 @@ export class MainScene extends Phaser.Scene {
                   if (px < GRID_WIDTH && py < GRID_HEIGHT) {
                     previewedTiles.add(`${px},${py}`);
                     const screenPos = this.gridToScreen(px, py);
-                    const preview = this.add.image(
-                      screenPos.x,
-                      screenPos.y,
-                      "road"
-                    );
+                    const preview = this.add.image(screenPos.x, screenPos.y, "road");
                     preview.setOrigin(0.5, 0);
                     preview.setAlpha(0.7);
                     preview.setTint(0xff0000);
-                    preview.setDepth(
-                      this.depthFromSortPoint(
-                        screenPos.x,
-                        screenPos.y,
-                        1_000_000
-                      )
-                    );
+                    preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
                     this.previewSprites.push(preview);
                   }
                 }
               }
 
               // Show building sprite in red
-              const textureKey = this.getBuildingTextureKey(
-                building,
-                cell.buildingOrientation
-              );
+              const textureKey = this.getBuildingTextureKey(building, cell.buildingOrientation);
               if (this.textures.exists(textureKey)) {
                 const frontX = originX + footprint.width - 1;
                 const frontY = originY + footprint.height - 1;
@@ -2764,17 +2687,11 @@ export class MainScene extends Phaser.Scene {
                 const bottomY = screenPos.y + TILE_HEIGHT;
                 const frontGroundY = screenPos.y + TILE_HEIGHT / 2;
 
-                const buildingPreview = this.add.image(
-                  screenPos.x,
-                  bottomY,
-                  textureKey
-                );
+                const buildingPreview = this.add.image(screenPos.x, bottomY, textureKey);
                 buildingPreview.setOrigin(0.5, 1);
                 buildingPreview.setAlpha(0.7);
                 buildingPreview.setTint(0xff0000);
-                buildingPreview.setDepth(
-                  this.depthFromSortPoint(screenPos.x, frontGroundY, 1_000_000)
-                );
+                buildingPreview.setDepth(this.depthFromSortPoint(screenPos.x, frontGroundY, 1_000_000));
                 this.previewSprites.push(buildingPreview);
               }
             }
@@ -2785,23 +2702,15 @@ export class MainScene extends Phaser.Scene {
               const screenPos = this.gridToScreen(tx, ty);
               let textureKey = "grass";
               if (cellType === TileType.Asphalt) textureKey = "asphalt";
-              else if (cellType === TileType.Road || cellType === TileType.Tile)
-                textureKey = "road";
-              else if (cellType === TileType.Snow)
-                textureKey = getSnowTextureKey(tx, ty);
-              const preview = this.add.image(
-                screenPos.x,
-                screenPos.y,
-                textureKey
-              );
+              else if (cellType === TileType.Road || cellType === TileType.Tile) textureKey = "road";
+              else if (cellType === TileType.Snow) textureKey = getSnowTextureKey(tx, ty);
+              const preview = this.add.image(screenPos.x, screenPos.y, textureKey);
               preview.setOrigin(0.5, 0);
               // Snow tiles are 88x44, need to halve
               if (textureKey.startsWith("snow_")) preview.setScale(0.5);
               preview.setAlpha(0.7);
               preview.setTint(0xff0000);
-              preview.setDepth(
-                this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000)
-              );
+              preview.setDepth(this.depthFromSortPoint(screenPos.x, screenPos.y, 1_000_000));
               this.previewSprites.push(preview);
             }
           }

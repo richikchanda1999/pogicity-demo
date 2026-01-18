@@ -90,9 +90,11 @@ const findClosestZoomIndex = (zoomValue: number): number => {
 export interface GameBoardProps {
   /** Optional custom initial grid. If not provided, uses default city layout. */
   initialGrid?: GridCell[][] | (() => GridCell[][]);
+  handleBuildingClick?: (buildingId: string | null, originX: number, originY: number, screenX: number, screenY: number) => void;
+  handleCarClick?: (carId: string) => void;
 }
 
-export default function GameBoard({ initialGrid }: GameBoardProps = {}) {
+export default function GameBoard({ initialGrid, handleBuildingClick, handleCarClick }: GameBoardProps = {}) {
   // Grid state (only thing React manages now)
   const [grid, setGrid] = useState<GridCell[][]>(() => {
     if (typeof initialGrid === "function") {
@@ -1051,8 +1053,8 @@ export default function GameBoard({ initialGrid }: GameBoardProps = {}) {
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100vh",
-        width: "100vw",
+        height: "100%",
+        width: "100%",
         overflow: "hidden",
         position: "relative",
         background: "#4a5d6a",
@@ -1277,7 +1279,7 @@ export default function GameBoard({ initialGrid }: GameBoardProps = {}) {
           top: 0,
           right: 2,
           zIndex: 1000,
-          display: "flex",
+          display: "none",
           gap: 0,
         }}
         onWheel={(e) => e.stopPropagation()}
@@ -1459,6 +1461,8 @@ export default function GameBoard({ initialGrid }: GameBoardProps = {}) {
             buildingOrientation={buildingOrientation}
             zoom={zoom}
             onTileClick={handleTileClick}
+            onBuildingClick={handleBuildingClick}
+            onCarClick={handleCarClick}
             onTilesDrag={handleTilesDrag}
             onEraserDrag={handleEraserDrag}
             onRoadDrag={handleRoadDrag}

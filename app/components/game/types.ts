@@ -73,6 +73,11 @@ export enum CarType {
   Taxi = "taxi",
 }
 
+export interface BuildingOrigin {
+  x: number;
+  y: number;
+}
+
 export interface Car {
   id: string;
   x: number;
@@ -81,6 +86,10 @@ export interface Car {
   speed: number;
   waiting: number;
   carType: CarType;
+  // Parking and trip state
+  isParked: boolean;
+  parkedAtBuilding?: BuildingOrigin;
+  destinationBuilding?: BuildingOrigin;
 }
 
 export const GRID_WIDTH = 48;

@@ -16,6 +16,9 @@ import { GridCell, ToolType, Direction, Car } from "../types";
 export interface PhaserGameHandle {
   spawnCharacter: () => boolean;
   spawnCar: () => boolean;
+  spawnCarAtBuilding: (buildingOriginX: number, buildingOriginY: number) => string | null;
+  initiateCarTrip: (carId: string, destBuildingOriginX: number, destBuildingOriginY: number) => boolean;
+  getCarById: (carId: string) => Car | null;
   setDrivingState: (isDriving: boolean) => void;
   getPlayerCar: () => Car | null;
   isPlayerDriving: () => boolean;
@@ -34,6 +37,8 @@ interface PhaserGameProps {
   buildingOrientation: Direction;
   zoom: number;
   onTileClick: (x: number, y: number) => void;
+  onBuildingClick?: (buildingId: string | null, originX: number, originY: number, screenX: number, screenY: number) => void;
+  onCarClick?: (carId: string) => void;
   onTileHover?: (x: number | null, y: number | null) => void;
   onTilesDrag?: (tiles: Array<{ x: number; y: number }>) => void;
   onEraserDrag?: (tiles: Array<{ x: number; y: number }>) => void;
@@ -52,6 +57,8 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
       buildingOrientation,
       zoom,
       onTileClick,
+      onBuildingClick,
+      onCarClick,
       onTileHover,
       onTilesDrag,
       onEraserDrag,
@@ -83,6 +90,24 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
             return sceneRef.current.spawnCar();
           }
           return false;
+        },
+        spawnCarAtBuilding: (buildingOriginX: number, buildingOriginY: number) => {
+          if (sceneRef.current) {
+            return sceneRef.current.spawnCarAtBuilding(buildingOriginX, buildingOriginY);
+          }
+          return null;
+        },
+        initiateCarTrip: (carId: string, destBuildingOriginX: number, destBuildingOriginY: number) => {
+          if (sceneRef.current) {
+            return sceneRef.current.initiateCarTrip(carId, destBuildingOriginX, destBuildingOriginY);
+          }
+          return false;
+        },
+        getCarById: (carId: string) => {
+          if (sceneRef.current) {
+            return sceneRef.current.getCarById(carId);
+          }
+          return null;
         },
         setDrivingState: (isDriving: boolean) => {
           if (sceneRef.current) {
@@ -155,6 +180,8 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
         const events: SceneEvents = {
           onTileClick: (x, y) => onTileClick(x, y),
           onTileHover: (x, y) => onTileHover?.(x, y),
+          onBuildingClick: (buildingId, originX, originY, screenX, screenY) => onBuildingClick?.(buildingId, originX, originY, screenX, screenY),
+          onCarClick: (carId) => onCarClick?.(carId),
           onTilesDrag: (tiles) => onTilesDrag?.(tiles),
           onEraserDrag: (tiles) => onEraserDrag?.(tiles),
           onRoadDrag: (segments) => onRoadDrag?.(segments),
@@ -233,6 +260,8 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
       if (sceneRef.current) {
         const events: SceneEvents = {
           onTileClick: (x, y) => onTileClick(x, y),
+          onBuildingClick: (buildingId, originX, originY, screenX, screenY) => onBuildingClick?.(buildingId, originX, originY, screenX, screenY),
+          onCarClick: (carId) => onCarClick?.(carId),
           onTileHover: (x, y) => onTileHover?.(x, y),
           onTilesDrag: (tiles) => onTilesDrag?.(tiles),
           onEraserDrag: (tiles) => onEraserDrag?.(tiles),
@@ -240,7 +269,7 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
         };
         sceneRef.current.setEventCallbacks(events);
       }
-    }, [onTileClick, onTileHover, onTilesDrag, onEraserDrag, onRoadDrag]);
+    }, [onTileClick, onBuildingClick, onTileHover, onTilesDrag, onEraserDrag, onRoadDrag]);
 
     return (
       <div
