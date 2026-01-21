@@ -69,8 +69,26 @@ export interface Character {
 }
 
 export enum CarType {
-  Jeep = "jeep",
-  Taxi = "taxi",
+  Truck1 = "truck-1",
+  Truck2 = "truck-2",
+  Truck3 = "truck-3",
+}
+
+// Truck status from backend
+export enum TruckStatus {
+  IDLE = "IDLE",
+  SERVING = "SERVING",
+  MOVING = "MOVING",
+  RESTOCKING = "RESTOCKING",
+}
+
+// Truck state from backend API
+export interface TruckState {
+  id: string;
+  status: TruckStatus;
+  current_zone: string;
+  destination_zone?: string | null;
+  arrival_time: number;
 }
 
 export interface BuildingOrigin {
@@ -87,16 +105,37 @@ export interface Car {
   waiting: number;
   carType: CarType;
   isParked: boolean;
-  path: Array<{x: number, y: number}>;
-  pathIndex: number
+  path: Array<{ x: number; y: number }>;
+  pathIndex: number;
   parkedAtBuilding?: BuildingOrigin;
   destinationBuilding?: BuildingOrigin;
+  // Zone-based parking (for fleet trucks)
+  parkedAtZone?: string;
+  destinationZone?: string;
 }
 
 export const GRID_WIDTH = 48;
 export const GRID_HEIGHT = 48;
 
 export const CAR_SPEED = 0.05;
+
+// Zone configuration for Fleet Feast city regions
+export interface ZoneConfig {
+  id: string;
+  name: string;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  tileType: TileType;
+  // Color for boundary overlay (hex string with alpha, e.g., "0xff0000" for red)
+  borderColor: number;
+  // Optional label position offset from center
+  labelOffset?: { x: number; y: number };
+  parking_zones: Array<{x: number, y: number}>
+}
 
 // Isometric tile dimensions (44x22 isometric diamond)
 export const TILE_WIDTH = 44;
@@ -118,10 +157,7 @@ export const CHARACTER_PIXELS_PER_FRAME_Y = 5 / 58;
 export const CHARACTER_SPEED = 0.015;
 
 // Convert grid coordinates to isometric screen coordinates
-export function gridToIso(
-  gridX: number,
-  gridY: number
-): { x: number; y: number } {
+export function gridToIso(gridX: number, gridY: number): { x: number; y: number } {
   return {
     x: (gridX - gridY) * (TILE_WIDTH / 2),
     y: (gridX + gridY) * (TILE_HEIGHT / 2),
@@ -129,10 +165,7 @@ export function gridToIso(
 }
 
 // Convert isometric screen coordinates back to grid coordinates
-export function isoToGrid(
-  isoX: number,
-  isoY: number
-): { x: number; y: number } {
+export function isoToGrid(isoX: number, isoY: number): { x: number; y: number } {
   return {
     x: (isoX / (TILE_WIDTH / 2) + isoY / (TILE_HEIGHT / 2)) / 2,
     y: (isoY / (TILE_HEIGHT / 2) - isoX / (TILE_WIDTH / 2)) / 2,
