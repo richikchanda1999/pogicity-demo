@@ -6,8 +6,9 @@ import {
   ToolType,
   GridCell,
   Direction,
-  LightingType,
   VisualSettings,
+  ZoneConfig,
+  TruckState,
   GRID_WIDTH,
   GRID_HEIGHT,
 } from "./types";
@@ -90,6 +91,12 @@ const findClosestZoomIndex = (zoomValue: number): number => {
 export interface GameBoardProps {
   /** Optional custom initial grid. If not provided, uses default city layout. */
   initialGrid?: GridCell[][] | (() => GridCell[][]);
+  /** Optional zone configurations for rendering zone boundaries and labels. */
+  zones?: ZoneConfig[];
+  /** Fleet truck state from backend */
+  trucks?: TruckState[];
+  /** Current game time from backend */
+  currentTime?: number;
   handleBuildingClick?: (
     buildingId: string | null,
     originX: number,
@@ -100,7 +107,7 @@ export interface GameBoardProps {
   handleCarClick?: (carId: string) => void;
 }
 
-export default function GameBoard({ initialGrid, handleBuildingClick, handleCarClick }: GameBoardProps = {}) {
+export default function GameBoard({ initialGrid, zones = [], trucks = [], currentTime = 0, handleBuildingClick, handleCarClick }: GameBoardProps = {}) {
   // Grid state (only thing React manages now)
   const [grid, setGrid] = useState<GridCell[][]>(() => {
     if (typeof initialGrid === "function") {
@@ -178,6 +185,13 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
   // Ref to track accumulated scroll delta for zoom
   const scrollAccumulatorRef = useRef(0);
   const scrollDirectionRef = useRef<number | null>(null); // Track scroll direction: positive = down, negative = up
+
+  // Sync fleet trucks from backend state
+  useEffect(() => {
+    if (phaserGameRef.current && trucks.length > 0) {
+      phaserGameRef.current.syncTrucks(trucks, currentTime);
+    }
+  }, [trucks, currentTime]);
 
   // Reset building orientation to south when switching buildings
   useEffect(() => {
@@ -888,7 +902,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
       setTimeout(() => {
         if (success && phaserGameRef.current) {
           console.log('Initiating car trip')
-          const initiate = phaserGameRef.current.initiateCarTrip(success, 30, 29);
+          const initiate = phaserGameRef.current.initiateCarTrip(success, 44, 44);
           console.log('Initiated car trip? ', initiate)
         }
       }, 5 * 1000);
@@ -1477,6 +1491,7 @@ export default function GameBoard({ initialGrid, handleBuildingClick, handleCarC
           <PhaserGame
             ref={phaserGameRef}
             grid={grid}
+            zones={zones}
             selectedTool={selectedTool}
             selectedBuildingId={selectedBuildingId}
             buildingOrientation={buildingOrientation}
