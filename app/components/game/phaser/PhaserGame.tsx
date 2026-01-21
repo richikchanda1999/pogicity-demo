@@ -3,14 +3,13 @@
 import {
   useEffect,
   useRef,
-  useCallback,
   useImperativeHandle,
   forwardRef,
 } from "react";
 import Phaser from "phaser";
 import { MainScene, SceneEvents } from "./MainScene";
 import { createGameConfig } from "./gameConfig";
-import { GridCell, ToolType, Direction, Car } from "../types";
+import { GridCell, ToolType, Direction, Car, ZoneConfig, TruckState } from "../types";
 
 // Exposed methods for parent component
 export interface PhaserGameHandle {
@@ -28,10 +27,12 @@ export interface PhaserGameHandle {
   clearCars: () => void;
   shakeScreen: (axis?: "x" | "y", intensity?: number, duration?: number) => void;
   zoomAtPoint: (zoom: number, screenX: number, screenY: number) => void;
+  syncTrucks: (trucks: TruckState[], currentTime: number) => void;
 }
 
 interface PhaserGameProps {
   grid: GridCell[][];
+  zones?: ZoneConfig[];
   selectedTool: ToolType;
   selectedBuildingId: string | null;
   buildingOrientation: Direction;
@@ -52,6 +53,7 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
   function PhaserGame(
     {
       grid,
+      zones = [],
       selectedTool,
       selectedBuildingId,
       buildingOrientation,
@@ -159,6 +161,11 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
             sceneRef.current.zoomAtPoint(zoom, screenX, screenY);
           }
         },
+        syncTrucks: (trucks: TruckState[], currentTime: number) => {
+          if (sceneRef.current) {
+            sceneRef.current.syncTrucks(trucks, currentTime);
+          }
+        },
       }),
       []
     );
@@ -207,6 +214,13 @@ const PhaserGame = forwardRef<PhaserGameHandle, PhaserGameProps>(
         sceneRef.current.updateGrid(grid);
       }
     }, [grid]);
+
+    // Update zones when they change
+    useEffect(() => {
+      if (sceneRef.current && zones.length > 0) {
+        sceneRef.current.setZones(zones);
+      }
+    }, [zones]);
 
     // Update selected tool
     useEffect(() => {

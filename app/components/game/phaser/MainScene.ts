@@ -15,6 +15,9 @@ import {
   CHARACTER_SPEED,
   CAR_SPEED,
   BuildingOrigin,
+  ZoneConfig,
+  TruckState,
+  TruckStatus,
 } from "../types";
 import { GRID_OFFSET_X, GRID_OFFSET_Y } from "./gameConfig";
 import {
@@ -120,6 +123,16 @@ export class MainScene extends Phaser.Scene {
   private showPaths: boolean = false;
   private pathOverlaySprites: Phaser.GameObjects.Graphics | null = null;
 
+  // Zone rendering
+  private zones: ZoneConfig[] = [];
+  private zoneBoundaryGraphics: Phaser.GameObjects.Graphics | null = null;
+  private zoneLabels: Map<string, Phaser.GameObjects.Text> = new Map();
+
+  // Truck management (fleet trucks synced from backend)
+  private truckCars: Map<string, Car> = new Map(); // truckId -> Car
+  private parkingSpotOccupancy: Map<string, string> = new Map(); // "zoneId:x:y" -> truckId
+  private previousTruckStates: Map<string, TruckStatus> = new Map(); // truckId -> previous status
+
   // Driving mode state
   private isPlayerDriving: boolean = false;
   private playerCar: Car | null = null;
@@ -179,6 +192,7 @@ export class MainScene extends Phaser.Scene {
     // Load tile textures
     this.load.image("grass", "/Tiles/1x1grass.png");
     this.load.image("road", "/Tiles/1x1square_tile.png");
+    this.load.image("tile", "/Tiles/1x1tile.png");
     this.load.image("asphalt", "/Tiles/1x1asphalt_tile.png");
     this.load.image("snow_1", "/Tiles/1x1snow_tile_1.png");
     this.load.image("snow_2", "/Tiles/1x1snow_tile_2.png");
@@ -193,7 +207,7 @@ export class MainScene extends Phaser.Scene {
     }
 
     // Load car textures
-    const carTypes = ["jeep", "taxi"];
+    const carTypes = ["truck1", "truck2", "truck3"];
     const directions = ["n", "s", "e", "w"];
     for (const car of carTypes) {
       for (const dir of directions) {
@@ -248,6 +262,12 @@ export class MainScene extends Phaser.Scene {
 
     // Initial render
     this.renderGrid();
+
+    // Render zones if they were set before scene was ready
+    if (this.zones.length > 0) {
+      this.renderZoneBoundaries();
+      this.renderZoneLabels();
+    }
 
     // Load character GIF animations asynchronously
     this.loadCharacterAnimations();
@@ -574,8 +594,15 @@ export class MainScene extends Phaser.Scene {
   // ============================================
 
   private updateCars(): void {
+    // Update AI cars
     for (let i = 0; i < this.cars.length; i++) {
       this.cars[i] = this.updateSingleCar(this.cars[i]);
+    }
+
+    // Update fleet truck cars
+    for (const [truckId, car] of this.truckCars.entries()) {
+      const updatedCar = this.updateSingleCar(car);
+      this.truckCars.set(truckId, updatedCar);
     }
   }
 
@@ -818,6 +845,20 @@ export class MainScene extends Phaser.Scene {
               isParked: true,
               parkedAtBuilding: destinationBuilding,
               destinationBuilding: undefined,
+              path: [],
+              pathIndex: 0,
+              waiting: 0,
+            };
+          }
+          // Handle zone-based destination (fleet trucks)
+          if (car.destinationZone) {
+            return {
+              ...car,
+              x: targetX,
+              y: targetY,
+              isParked: true,
+              parkedAtZone: car.destinationZone,
+              destinationZone: undefined,
               path: [],
               pathIndex: 0,
               waiting: 0,
@@ -1344,7 +1385,7 @@ export class MainScene extends Phaser.Scene {
     } else if (cell.type === TileType.Asphalt) {
       textureKey = "asphalt";
     } else if (cell.type === TileType.Tile) {
-      textureKey = "road";
+      textureKey = "tile";
     } else if (cell.type === TileType.Snow) {
       textureKey = getSnowTextureKey(x, y);
     } else if (cell.type === TileType.Building) {
@@ -1352,7 +1393,9 @@ export class MainScene extends Phaser.Scene {
         const building = getBuilding(cell.buildingId);
         const preservesTile = building && (building.category === "props" || building.isDecoration);
         if (preservesTile && cell.underlyingTileType) {
-          if (cell.underlyingTileType === TileType.Tile || cell.underlyingTileType === TileType.Road) {
+          if (cell.underlyingTileType === TileType.Tile) {
+            textureKey = "tile";
+          } else if (cell.underlyingTileType === TileType.Road) {
             textureKey = "road";
           } else if (cell.underlyingTileType === TileType.Asphalt) {
             textureKey = "asphalt";
@@ -1453,7 +1496,7 @@ export class MainScene extends Phaser.Scene {
       direction = allDirections[Math.floor(Math.random() * allDirections.length)];
     }
 
-    const carType = Math.random() < 0.5 ? CarType.Taxi : CarType.Jeep;
+    const carType = Math.random() < 0.3 ? CarType.Truck1 : Math.random() < 0.6 ? CarType.Truck2 : CarType.Truck3;
 
     const newCar: Car = {
       id: generateId(),
@@ -1553,7 +1596,7 @@ export class MainScene extends Phaser.Scene {
       direction = dy > 0 ? Direction.Down : Direction.Up;
     }
 
-    const carType = Math.random() < 0.5 ? CarType.Taxi : CarType.Jeep;
+    const carType = Math.random() < 0.3 ? CarType.Truck1 : Math.random() < 0.6 ? CarType.Truck2 : CarType.Truck3;
     const carId = generateId();
 
     const newCar: Car = {
@@ -1681,6 +1724,203 @@ export class MainScene extends Phaser.Scene {
     return true;
   }
 
+  // Map truck ID to CarType
+  private truckIdToCarType(truckId: string): CarType {
+    switch (truckId) {
+      case "truck-1":
+        return CarType.Truck1;
+      case "truck-2":
+        return CarType.Truck2;
+      case "truck-3":
+        return CarType.Truck3;
+      default:
+        return CarType.Truck1;
+    }
+  }
+
+  // Get parking spot key for occupancy tracking
+  private getParkingSpotKey(zoneId: string, x: number, y: number): string {
+    return `${zoneId}:${x}:${y}`;
+  }
+
+  // Find a free parking spot in a zone
+  private findFreeParkingSpot(zoneId: string): { x: number; y: number } | null {
+    const zone = this.zones.find((z) => z.id === zoneId);
+    if (!zone || !zone.parking_zones || zone.parking_zones.length === 0) {
+      return null;
+    }
+
+    for (const spot of zone.parking_zones) {
+      const spotKey = this.getParkingSpotKey(zoneId, spot.x, spot.y);
+      if (!this.parkingSpotOccupancy.has(spotKey)) {
+        return { x: spot.x, y: spot.y };
+      }
+    }
+
+    // All spots occupied, return first spot (will overlap)
+    return zone.parking_zones[0];
+  }
+
+  // Occupy a parking spot
+  private occupyParkingSpot(zoneId: string, x: number, y: number, truckId: string): void {
+    const spotKey = this.getParkingSpotKey(zoneId, x, y);
+    this.parkingSpotOccupancy.set(spotKey, truckId);
+  }
+
+  // Free a parking spot occupied by a truck
+  private freeParkingSpotForTruck(truckId: string): void {
+    for (const [spotKey, occupantId] of this.parkingSpotOccupancy.entries()) {
+      if (occupantId === truckId) {
+        this.parkingSpotOccupancy.delete(spotKey);
+        break;
+      }
+    }
+  }
+
+  // Spawn a truck car at a parking spot in a zone
+  private spawnTruckAtZone(truckId: string, zoneId: string): Car | null {
+    const spot = this.findFreeParkingSpot(zoneId);
+    if (!spot) {
+      console.warn(`No parking spot found in zone ${zoneId} for truck ${truckId}`);
+      return null;
+    }
+
+    const carType = this.truckIdToCarType(truckId);
+    const car: Car = {
+      id: truckId,
+      x: spot.x + 0.5,
+      y: spot.y + 0.5,
+      direction: Direction.Down,
+      speed: CAR_SPEED,
+      waiting: 0,
+      carType,
+      isParked: true,
+      path: [],
+      pathIndex: 0,
+      parkedAtZone: zoneId,
+    };
+
+    this.truckCars.set(truckId, car);
+    this.occupyParkingSpot(zoneId, spot.x, spot.y, truckId);
+
+    return car;
+  }
+
+  // Initiate a truck trip from current zone to destination zone
+  private initiateTruckTrip(
+    truckId: string,
+    destinationZoneId: string,
+    currentTime: number,
+    arrivalTime: number,
+  ): boolean {
+    const car = this.truckCars.get(truckId);
+    if (!car) {
+      console.warn(`No car found for truck ${truckId}`);
+      return false;
+    }
+
+    // Find a free parking spot in the destination zone
+    const destSpot = this.findFreeParkingSpot(destinationZoneId);
+    if (!destSpot) {
+      console.warn(`No parking spot found in destination zone ${destinationZoneId}`);
+      return false;
+    }
+
+    // Compute path using A*
+    const startX = Math.floor(car.x);
+    const startY = Math.floor(car.y);
+    const path = this.computePath(startX, startY, destSpot.x, destSpot.y);
+
+    if (!path || path.length === 0) {
+      console.warn(`No path found from (${startX}, ${startY}) to (${destSpot.x}, ${destSpot.y})`);
+      return false;
+    }
+
+    // Calculate speed based on remaining time
+    // Each path step is one tile, car moves at `speed` tiles per frame
+    // We want to complete the path by arrivalTime
+    const timeRemaining = arrivalTime - currentTime;
+    if (timeRemaining <= 0) {
+      // Already arrived or past arrival time - teleport to destination
+      car.x = destSpot.x + 0.5;
+      car.y = destSpot.y + 0.5;
+      car.isParked = true;
+      car.path = [];
+      car.pathIndex = 0;
+      car.parkedAtZone = destinationZoneId;
+      this.freeParkingSpotForTruck(truckId);
+      this.occupyParkingSpot(destinationZoneId, destSpot.x, destSpot.y, truckId);
+      return true;
+    }
+
+    // Assuming 60 FPS and each game tick is some unit of time
+    // Speed = tiles per frame = pathLength / (timeRemaining * framesPerTick)
+    // Let's assume 1 game tick = 1 second of real time and 60 frames per second
+    const framesPerTick = 60;
+    const totalFrames = timeRemaining * framesPerTick;
+    const calculatedSpeed = path.length / totalFrames;
+
+    // Ensure minimum speed so the car actually moves
+    const speed = Math.max(calculatedSpeed, 0.001);
+
+    // Free the current parking spot and reserve the destination
+    this.freeParkingSpotForTruck(truckId);
+    this.occupyParkingSpot(destinationZoneId, destSpot.x, destSpot.y, truckId);
+
+    // Update car state
+    car.isParked = false;
+    car.path = path;
+    car.pathIndex = 0;
+    car.speed = speed;
+    car.destinationZone = destinationZoneId;
+    car.parkedAtZone = undefined;
+
+    this.truckCars.set(truckId, car);
+    return true;
+  }
+
+  // Sync truck state from backend
+  syncTrucks(trucks: TruckState[], currentTime: number): void {
+    for (const truck of trucks) {
+      const existingCar = this.truckCars.get(truck.id);
+      const previousStatus = this.previousTruckStates.get(truck.id);
+
+      if (!existingCar) {
+        // New truck - spawn at current zone
+        const car = this.spawnTruckAtZone(truck.id, truck.current_zone);
+        if (car && truck.status === TruckStatus.MOVING && truck.destination_zone) {
+          // Truck is already moving when we first see it
+          this.initiateTruckTrip(truck.id, truck.destination_zone, currentTime, truck.arrival_time);
+        }
+      } else {
+        // Existing truck - check for status changes
+        if (
+          previousStatus !== TruckStatus.MOVING &&
+          truck.status === TruckStatus.MOVING &&
+          truck.destination_zone
+        ) {
+          // Status changed to MOVING - initiate trip
+          this.initiateTruckTrip(truck.id, truck.destination_zone, currentTime, truck.arrival_time);
+        } else if (
+          previousStatus === TruckStatus.MOVING &&
+          truck.status !== TruckStatus.MOVING
+        ) {
+          // Truck arrived at destination - park the car
+          if (!existingCar.isParked) {
+            existingCar.isParked = true;
+            existingCar.path = [];
+            existingCar.pathIndex = 0;
+            existingCar.parkedAtZone = truck.current_zone;
+            existingCar.destinationZone = undefined;
+          }
+        }
+      }
+
+      // Update previous state for next sync
+      this.previousTruckStates.set(truck.id, truck.status);
+    }
+  }
+
   // Get a car by ID
   getCarById(carId: string): Car | null {
     return this.cars.find((c) => c.id === carId) || null;
@@ -1711,7 +1951,7 @@ export class MainScene extends Phaser.Scene {
           direction: Direction.Right,
           speed: CAR_SPEED * 1.5,
           waiting: 0,
-          carType: CarType.Jeep,
+          carType: CarType.Truck1,
           isParked: false,
           path: [],
           pathIndex: 0,
@@ -1896,6 +2136,123 @@ export class MainScene extends Phaser.Scene {
     this.pathOverlaySprites = graphics;
   }
 
+  // ============================================
+  // ZONE RENDERING
+  // ============================================
+
+  /**
+   * Set zone configurations for rendering boundaries and labels
+   */
+  setZones(zones: ZoneConfig[]): void {
+    this.zones = zones;
+    if (this.isReady) {
+      this.renderZoneBoundaries();
+      this.renderZoneLabels();
+    }
+  }
+
+  /**
+   * Render zone boundary overlays as colored lines around each zone
+   */
+  private renderZoneBoundaries(): void {
+    // Clear existing boundaries
+    if (this.zoneBoundaryGraphics) {
+      this.zoneBoundaryGraphics.destroy();
+      this.zoneBoundaryGraphics = null;
+    }
+
+    if (this.zones.length === 0) return;
+
+    const graphics = this.add.graphics();
+    // Render below buildings but above tiles
+    graphics.setDepth(100);
+
+    for (const zone of this.zones) {
+      const { bounds, borderColor } = zone;
+      const lineWidth = 3;
+      const alpha = 0.8;
+
+      graphics.lineStyle(lineWidth, borderColor, alpha);
+
+      // Get isometric corners of the zone
+      // In isometric view, the zone is a diamond shape
+      const topLeft = this.gridToScreen(bounds.x, bounds.y);
+      const topRight = this.gridToScreen(bounds.x + bounds.width, bounds.y);
+      const bottomRight = this.gridToScreen(bounds.x + bounds.width, bounds.y + bounds.height);
+      const bottomLeft = this.gridToScreen(bounds.x, bounds.y + bounds.height);
+
+      // Draw the isometric boundary (diamond shape)
+      graphics.beginPath();
+      graphics.moveTo(topLeft.x, topLeft.y + TILE_HEIGHT / 2);
+      graphics.lineTo(topRight.x, topRight.y + TILE_HEIGHT / 2);
+      graphics.lineTo(bottomRight.x, bottomRight.y + TILE_HEIGHT / 2);
+      graphics.lineTo(bottomLeft.x, bottomLeft.y + TILE_HEIGHT / 2);
+      graphics.closePath();
+      graphics.strokePath();
+
+      // Add subtle fill
+      graphics.fillStyle(borderColor, 0.05);
+      graphics.beginPath();
+      graphics.moveTo(topLeft.x, topLeft.y + TILE_HEIGHT / 2);
+      graphics.lineTo(topRight.x, topRight.y + TILE_HEIGHT / 2);
+      graphics.lineTo(bottomRight.x, bottomRight.y + TILE_HEIGHT / 2);
+      graphics.lineTo(bottomLeft.x, bottomLeft.y + TILE_HEIGHT / 2);
+      graphics.closePath();
+      graphics.fillPath();
+    }
+
+    this.zoneBoundaryGraphics = graphics;
+  }
+
+  /**
+   * Render zone name labels at the center of each zone
+   */
+  private renderZoneLabels(): void {
+    // Clear existing labels
+    this.zoneLabels.forEach((label) => label.destroy());
+    this.zoneLabels.clear();
+
+    if (this.zones.length === 0) return;
+
+    for (const zone of this.zones) {
+      const { bounds, name, borderColor, labelOffset } = zone;
+
+      // Calculate center of zone in grid coordinates
+      const centerGridX = bounds.x + bounds.width / 2;
+      const centerGridY = bounds.y + bounds.height / 2;
+
+      // Convert to screen coordinates
+      const screenPos = this.gridToScreen(centerGridX, centerGridY);
+
+      // Apply optional offset
+      const offsetX = labelOffset?.x ?? 0;
+      const offsetY = labelOffset?.y ?? 0;
+
+      // Create label text
+      const label = this.add.text(
+        screenPos.x + offsetX,
+        screenPos.y + TILE_HEIGHT / 2 + offsetY,
+        name.toUpperCase(),
+        {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#ffffff",
+          backgroundColor: `#${borderColor.toString(16).padStart(6, "0")}`,
+          padding: { x: 8, y: 4 },
+          align: "center",
+        }
+      );
+
+      label.setOrigin(0.5, 0.5);
+      // Labels should be visible but not on top of everything
+      label.setDepth(1_000_000);
+      // Add slight shadow for readability
+      label.setShadow(2, 2, "#000000", 2, true, true);
+
+      this.zoneLabels.set(zone.id, label);
+    }
+  }
+
   private renderGrid(): void {
     // Initial full render
     this.tileSprites.forEach((sprite) => sprite.destroy());
@@ -1922,7 +2279,7 @@ export class MainScene extends Phaser.Scene {
         } else if (cell.type === TileType.Asphalt) {
           textureKey = "asphalt";
         } else if (cell.type === TileType.Tile) {
-          textureKey = "road";
+          textureKey = "tile";
         } else if (cell.type === TileType.Snow) {
           textureKey = getSnowTextureKey(x, y);
         } else if (cell.type === TileType.Building) {
@@ -1931,7 +2288,7 @@ export class MainScene extends Phaser.Scene {
             const preservesTile = building && (building.category === "props" || building.isDecoration);
             if (preservesTile && cell.underlyingTileType) {
               if (cell.underlyingTileType === TileType.Tile) {
-                textureKey = "road";
+                textureKey = "tile";
               } else if (cell.underlyingTileType === TileType.Road) {
                 textureKey = "road";
               } else if (cell.underlyingTileType === TileType.Asphalt) {
@@ -2333,8 +2690,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   private renderCars(): void {
-    // Get all cars to render (AI + player)
-    const allCars = this.playerCar ? [...this.cars, this.playerCar] : this.cars;
+    // Get all cars to render (AI + player + fleet trucks)
+    const truckCarsArray = Array.from(this.truckCars.values());
+    const baseCars = [...this.cars, ...truckCarsArray];
+    const allCars = this.playerCar ? [...baseCars, this.playerCar] : baseCars;
     const currentCarIds = new Set(allCars.map((c) => c.id));
 
     // Remove sprites for cars that no longer exist
@@ -2375,7 +2734,9 @@ export class MainScene extends Phaser.Scene {
       [Direction.Left]: "w",
       [Direction.Right]: "e",
     };
-    return `${carType}_${dirMap[direction]}`;
+    // Remove hyphen from carType (e.g., "truck-1" -> "truck1") to match sprite keys
+    const spriteKey = carType.replace("-", "");
+    return `${spriteKey}_${dirMap[direction]}`;
   }
 
   private renderCharacters(): void {
@@ -2806,7 +3167,8 @@ export class MainScene extends Phaser.Scene {
               const screenPos = this.gridToScreen(tx, ty);
               let textureKey = "grass";
               if (cellType === TileType.Asphalt) textureKey = "asphalt";
-              else if (cellType === TileType.Road || cellType === TileType.Tile) textureKey = "road";
+              else if (cellType === TileType.Road) textureKey = "road";
+              else if (cellType === TileType.Tile) textureKey = "tile";
               else if (cellType === TileType.Snow) textureKey = getSnowTextureKey(tx, ty);
               const preview = this.add.image(screenPos.x, screenPos.y, textureKey);
               preview.setOrigin(0.5, 0);
